@@ -1,0 +1,10 @@
+{
+ "queuedId": "00000000-0000-4000-8000-52457add4f4d",
+ "receipt": {
+  "still_queued": [],
+  "cancelled": [
+   "00000000-0000-4000-8000-52457add4f4d"
+  ]
+ },
+ "recordedWith": "2.1.322"
+}

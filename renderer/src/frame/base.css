@@ -1,0 +1,106 @@
+/* Canopy's look inside a widget frame: the type, the plain elements and a few layout classes, so a widget matches the
+   app before Claude writes a line of CSS. Adopted by the page and by every component's shadow root (element.ts).
+   Colors come only from the variables the host sends (MCP Apps' standard names, set on the root element), so the
+   whole thing follows light and dark. Sizes mirror index.css: text-ui 13/20, text-small 12/16, code 12/18. */
+*, ::before, ::after { box-sizing: border-box; }
+:host { display: block; font: 13px/20px var(--font-sans); letter-spacing: -0.003em; color: var(--color-text-primary); }
+:host([hidden]) { display: none; }
+
+h1, h2, h3, h4, h5, h6 { margin: 0; font-size: 13px; line-height: 20px; font-weight: 500; letter-spacing: -0.003em; text-wrap: balance; }
+h1, h2 { font-size: 15px; line-height: 24px; font-weight: 600; letter-spacing: -0.008em; }
+p { margin: 0; }
+small, .small { font-size: 12px; line-height: 16px; letter-spacing: 0; }
+small, .muted { color: var(--color-text-secondary); }
+.faint { color: var(--color-text-tertiary); }
+strong, b { font-weight: 500; }
+a { color: inherit; cursor: pointer; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.18em; text-decoration-color: color-mix(in oklch, var(--color-text-primary) 30%, transparent); }
+a:hover { text-decoration-color: currentColor; }
+ul, ol { margin: 0; padding-left: 18px; }
+li { margin: 2px 0; }
+li::marker { color: var(--color-text-tertiary); }
+hr { height: 0; margin: 4px 0; border: 0; border-top: 1px solid var(--color-border-tertiary); }
+img, svg, canvas, video { max-width: 100%; }
+
+code, kbd, pre, samp, .mono { font-family: var(--font-mono); font-size: 12px; line-height: 18px; letter-spacing: 0; }
+:not(pre) > code { padding: 1px 5px; border-radius: var(--border-radius-sm); background: var(--color-background-tertiary); }
+pre { margin: 0; padding: 12px 14px; border-radius: var(--border-radius-md); background: var(--color-background-tertiary); white-space: pre-wrap; overflow-wrap: anywhere; }
+kbd { padding: 1px 5px; border: 1px solid var(--color-border-tertiary); border-radius: var(--border-radius-sm); color: var(--color-text-secondary); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { padding: 8px 14px; text-align: left; font-weight: 500; color: var(--color-text-secondary); border-bottom: 1px solid var(--color-border-tertiary); white-space: nowrap; }
+td { padding: 8px 14px; border-bottom: 1px solid var(--color-border-tertiary); vertical-align: top; }
+tr:last-child > td { border-bottom: 0; }
+th:first-child, td:first-child { padding-left: 0; }
+th:last-child, td:last-child { padding-right: 0; }
+
+/* ---- controls: the app's Button, Input and Switch ---- */
+button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid var(--color-border-secondary); border-radius: calc(var(--border-radius-md) - 2px); background: transparent; color: var(--color-text-primary); font: inherit; font-weight: 500; letter-spacing: inherit; white-space: nowrap; cursor: default; }
+button:hover { background: var(--color-background-hover); }
+button:active { background: var(--color-background-hover); transform: translateY(0.5px); }
+button:disabled { opacity: 0.5; pointer-events: none; }
+button.primary { border-color: transparent; background: var(--color-background-inverse); color: var(--color-text-inverse); }
+button.primary:hover { opacity: 0.9; }
+button svg { flex: none; }
+
+input, select, textarea { font: inherit; letter-spacing: inherit; color: var(--color-text-primary); }
+input:not([type]), input[type="text"], input[type="search"], input[type="number"], input[type="email"], input[type="url"], input[type="tel"], input[type="password"], input[type="date"], input[type="time"], select, textarea {
+  width: 100%; min-width: 0; height: 32px; padding: 4px 12px; border: 1px solid var(--color-border-secondary); border-radius: calc(var(--border-radius-md) - 2px); background: transparent; outline: none;
+}
+textarea { height: auto; min-height: 64px; padding: 8px 12px; resize: vertical; }
+select { width: auto; padding-right: 28px; appearance: none; background: no-repeat right 10px center / 10px; background-image: var(--chevron); cursor: default; }
+input::placeholder, textarea::placeholder { color: var(--color-text-tertiary); }
+input:focus-visible, select:focus-visible, textarea:focus-visible { border-color: color-mix(in oklch, var(--color-text-primary) 35%, transparent); outline: none; }
+input:disabled, select:disabled, textarea:disabled { opacity: 0.5; pointer-events: none; }
+
+input[type="checkbox"], input[type="radio"] { appearance: none; flex: none; width: 14px; height: 14px; margin: 0; border: 1px solid color-mix(in oklch, var(--color-text-primary) 30%, transparent); border-radius: 4px; background: transparent center / 10px no-repeat; vertical-align: -2px; cursor: default; transition: background-color 120ms, border-color 120ms; }
+input[type="radio"] { border-radius: 50%; }
+input[type="checkbox"]:checked, input[type="radio"]:checked { border-color: var(--color-text-primary); background-color: var(--color-text-primary); }
+input[type="checkbox"]:checked::after { content: ""; display: block; width: 100%; height: 100%; background: var(--color-background-primary); mask: var(--check) center / 10px no-repeat; }
+input[type="radio"]:checked::after { content: ""; display: block; width: 6px; height: 6px; margin: 3px; border-radius: 50%; background: var(--color-background-primary); }
+input[type="checkbox"][role="switch"] { position: relative; width: 32px; height: 18px; border: 0; border-radius: 999px; background-color: var(--color-border-secondary); transition: background-color 160ms; }
+/* Off, the thumb is the surface color on a light page and ink on a dark one, as the app's Switch has it. */
+input[type="checkbox"][role="switch"]::after { content: ""; position: absolute; top: 1px; left: 1px; width: 16px; height: 16px; margin: 0; border-radius: 50%; background: light-dark(var(--color-background-primary), var(--color-text-primary)); mask: none; transition: transform 160ms cubic-bezier(0.32, 0.72, 0, 1); }
+input[type="checkbox"][role="switch"]:checked { background-color: var(--color-text-primary); }
+input[type="checkbox"][role="switch"]:checked::after { background: var(--color-background-primary); transform: translateX(14px); }
+
+input[type="range"] { appearance: none; width: 100%; height: 20px; margin: 0; background: transparent; cursor: default; }
+input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--color-border-secondary); }
+input[type="range"]::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; margin-top: -6px; border: 0; border-radius: 50%; background: var(--color-text-primary); box-shadow: 0 0 0 2px var(--color-background-primary); }
+
+label { cursor: default; }
+/* A label over its control: its words (and any value shown beside them) stay on one line, the control sits below. */
+label.stack { display: block; }
+label.stack > :is(input:not([type="checkbox"], [type="radio"]), select, textarea, canopy-stat) { display: block; margin-top: 6px; }
+details > summary { color: var(--color-text-secondary); cursor: default; list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::after { content: "›"; display: inline-block; margin-left: 6px; color: var(--color-text-tertiary); transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1); }
+details[open] > summary::after { transform: rotate(90deg); }
+details > summary:hover { color: var(--color-text-primary); }
+
+:focus-visible { outline: 1.5px solid var(--color-ring-primary); outline-offset: 2px; }
+:focus:not(:focus-visible) { outline: none; }
+::selection { background: color-mix(in oklch, var(--color-text-primary) 18%, transparent); }
+
+/* ---- layout classes ---- */
+.card { padding: 16px; border: 1px solid var(--color-border-secondary); border-radius: var(--border-radius-lg); background: var(--color-background-secondary); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(var(--min, 160px), 100%), 1fr)); gap: 12px; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.stack { display: flex; flex-direction: column; gap: 8px; }
+.row > input:not([type="checkbox"], [type="radio"]), .row > textarea { flex: 1 1 120px; width: auto; }
+.dot { display: inline-block; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); vertical-align: 1px; }
+.dot.good { background: var(--color-text-success); }
+.dot.warn { background: var(--color-text-warning); }
+.dot.bad { background: var(--color-text-danger); }
+
+/* ---- SVG drawings: ink only ---- */
+svg { display: block; height: auto; overflow: visible; }
+svg text { font: 13px var(--font-sans); letter-spacing: -0.003em; fill: var(--color-text-primary); }
+svg text.muted { fill: var(--color-text-secondary); }
+svg text.faint { font-size: 11px; fill: var(--color-text-tertiary); }
+svg .box { fill: var(--color-background-secondary); stroke: var(--color-border-secondary); stroke-width: 1; }
+svg .line { fill: none; stroke: var(--color-text-secondary); stroke-width: 1.2; }
+svg .dash { fill: none; stroke: var(--color-text-tertiary); stroke-width: 1.2; stroke-dasharray: 4 3; }
+button svg, a svg, .row > svg { display: inline-block; }
+
+@media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation-duration: 1ms !important; transition-duration: 1ms !important; } }

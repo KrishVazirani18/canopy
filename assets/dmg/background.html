@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Canopy disk image background</title>
+<!-- What Finder draws behind the two icons when Canopy.dmg is opened: the approved window (index.html) without the
+     icons and their names, which Finder draws itself. 640 wide like the window; taller than the window's 400, with
+     nothing in the extra, so a title bar of another height on another macOS never shows an edge.
+     scripts/dmg-background.mjs renders this to background.png and background@2x.png. -->
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 640px; height: 520px; overflow: hidden; background: #fbfbfa;
+               font: 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; }
+  /* The arrow sits level with the middle of the icons (y 168), halfway between them (x 320). */
+  .arrow { position: absolute; left: 276px; top: 156px; }
+  .hint { position: absolute; left: 0; right: 0; top: 300px; text-align: center; font-size: 14px; color: #6e6e73; }
+</style>
+</head>
+<body>
+  <svg class="arrow" width="88" height="24" viewBox="0 0 88 24" fill="none" aria-hidden="true">
+    <path d="M4 12H82" stroke="#9a9aa0" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M74 4L83 12L74 20" stroke="#9a9aa0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <p class="hint">Drag Canopy into Applications</p>
+</body>
+</html>

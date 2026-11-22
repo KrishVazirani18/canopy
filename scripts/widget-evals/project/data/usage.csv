@@ -1,0 +1,29 @@
+date,chat,model,turns,tokens,cost_usd
+2026-11-15,Fix the flaky upload test,Fable 5.2,17,582569,0.41
+2026-11-14,Ship the release notes,Fable 5.2,27,1190614,0.83
+2026-11-03,Checkout form redesign,Opus 5.5,47,1141584,4.45
+2026-11-01,Error page copy,GPT-6.1 Sol,6,177132,0.66
+2026-11-13,Loading spinner animation,Opus 5.5,33,1508773,5.88
+2026-11-08,Billing page,Fable 5.2,6,219261,0.15
+2026-11-13,Fix login redirect loop,Opus 5.5,43,862898,3.37
+2026-11-12,Stripe webhook handler,Opus 5.5,5,197473,0.77
+2026-11-12,Search results paging,GPT-6.1 Sol,39,1679947,6.22
+2026-11-10,Dark mode polish,Opus 5.5,18,405148,1.58
+2026-11-05,Email template states,Sonnet 5.5,17,708995,0.92
+2026-11-07,Dependency audit,GPT-6.1 Sol,28,672473,2.49
+2026-11-13,Dashboard charts,Fable 5.2,22,592902,0.42
+2026-11-09,Empty state styles,Fable 5.2,19,750945,0.53
+2026-11-02,Export menu,Sonnet 5.5,29,728502,0.95
+2026-11-05,Rate limit rules,Fable 5.2,27,854311,0.60
+2026-11-04,Retry on timeout,Sonnet 5.5,7,287949,0.37
+2026-11-10,Order status labels,Opus 5.5,41,1480758,5.77
+2026-11-06,Password reset flow,GPT-6.1 Sol,14,453782,1.68
+2026-11-03,Cache invalidation,Fable 5.2,33,823314,0.58
+2026-11-12,Orders pagination,Fable 5.2,4,105978,0.07
+2026-11-08,Delete confirm dialog,GPT-6.1 Sol,23,667338,2.47
+2026-11-05,Draft autosave,Sonnet 5.5,16,692874,0.90
+2026-11-11,Admin sidebar,Fable 5.2,6,265620,0.19
+2026-11-05,Invoice PDF,Sonnet 5.5,11,471067,0.61
+2026-11-06,Metrics panel,Opus 5.5,24,989836,3.86
+2026-11-15,Offline fallback,Opus 5.5,22,467505,1.82
+2026-11-14,Queue failed jobs,Sonnet 5.5,29,1037828,1.35

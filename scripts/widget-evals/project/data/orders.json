@@ -1,0 +1,1 @@
+{ "orders": [ { "id": "o-1", "items": [{ "price": 12.5, "qty": 2 }] }, { "id": "o-2" }, { "id": "o-3", "items": [{ "price": 4, "qty": 10 }] } ] }

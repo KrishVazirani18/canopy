@@ -1,0 +1,17 @@
+/* The widget frame's page itself: what must be true before any script runs. The rest of the look is base.css. */
+:root {
+  /* Marks drawn as masks or backgrounds; a data: URL is the only kind of image the frame may load. */
+  --check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 5.2l2.1 2.1L8 3'/%3E%3C/svg%3E");
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
+}
+html, body { margin: 0; background: transparent; }
+/* 2px all round so a focus ring or a border at the edge is never clipped; the host pulls the frame out by the same. */
+body { padding: 2px; overflow: hidden; font: 13px/20px var(--font-sans); letter-spacing: -0.003em; color: var(--color-text-primary); -webkit-font-smoothing: antialiased; cursor: default; opacity: 0; transition: opacity 140ms ease-out; }
+body[data-ready] { opacity: 1; }
+#root { display: flow-root; }
+/* Blocks written one after another get the reply's rhythm without any CSS from Claude. :where keeps this weightless,
+   so any rule of the widget's own wins. */
+:where(#root) > :where(:not(style, script, template, link, meta, title)) ~ :where(:not(style, script, template, link, meta, title)) { margin-top: 12px; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--color-text-primary) 16%, transparent); border: 3px solid transparent; background-clip: padding-box; border-radius: 10px; }

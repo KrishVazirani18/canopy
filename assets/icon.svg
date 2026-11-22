@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- macOS app icon, Liquid Glass style: a mint glass tile with a lens edge (light along the top rim, a darker
+       refracted lower edge) and a glossy, domed green mark with light catching the top of each tier. -->
+  <defs>
+    <!-- the glass body: mint, lighter at the top where light enters -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eefaf2"/><stop offset=".5" stop-color="#cdeedb"/><stop offset="1" stop-color="#9fd9b7"/>
+    </linearGradient>
+    <!-- light pooling inside the glass from the top-left -->
+    <radialGradient id="pool" cx=".3" cy=".18" r=".75">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".85"/><stop offset=".5" stop-color="#ffffff" stop-opacity=".15"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <!-- refraction along the bottom: the glass bends the colour darker at its lower edge -->
+    <linearGradient id="refract" x1="0" y1="0" x2="0" y2="1">
+      <stop offset=".72" stop-color="#0f6b3a" stop-opacity="0"/><stop offset="1" stop-color="#0f6b3a" stop-opacity=".22"/>
+    </linearGradient>
+    <!-- the lens rim: bright on top, fading, catching light again at the bottom -->
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset=".35" stop-color="#ffffff" stop-opacity=".25"/><stop offset=".8" stop-color="#ffffff" stop-opacity=".15"/><stop offset="1" stop-color="#ffffff" stop-opacity=".75"/>
+    </linearGradient>
+    <linearGradient id="rimIn" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b4d2a" stop-opacity="0"/><stop offset=".85" stop-color="#0b4d2a" stop-opacity="0"/><stop offset="1" stop-color="#0b4d2a" stop-opacity=".18"/>
+    </linearGradient>
+    <!-- the mark: domed green glass -->
+    <linearGradient id="mark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3fb873"/><stop offset=".5" stop-color="#22864d"/><stop offset="1" stop-color="#125530"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".75"/><stop offset=".42" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="sh" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#06301a" flood-opacity="0.28"/>
+    </filter>
+    <filter id="lift" x="-25%" y="-25%" width="150%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#06401f" flood-opacity=".35"/>
+    </filter>
+    <clipPath id="tile"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+  </defs>
+
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)" filter="url(#sh)"/>
+  <g clip-path="url(#tile)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#pool)"/>
+    <rect x="100" y="100" width="824" height="824" fill="url(#refract)"/>
+  </g>
+  <rect x="104" y="104" width="816" height="816" rx="181" fill="none" stroke="url(#rim)" stroke-width="8"/>
+  <rect x="112" y="112" width="800" height="800" rx="173" fill="none" stroke="url(#rimIn)" stroke-width="10"/>
+
+  <svg x="232" y="222" width="560" height="560" viewBox="468 203 600 600">
+    <g filter="url(#lift)" fill="url(#mark)">
+      <path d="M610 383H928Q942 383 940 368C925 300 860 256 785 256H750C676 256 612 300 598 368Q596 383 610 383Z"/>
+      <path d="M510 552H548Q556 552 562 546C580 528 605 515 638 515H898C931 515 956 528 974 546Q980 552 988 552H1028Q1040 552 1040 540C1040 470 975 411 902 411H634C561 411 497 470 497 540Q497 552 510 552Z"/>
+      <path d="M571 632H704C725 632 741 648 741 670V740Q741 751 752 751H784Q795 751 795 740V670C795 648 811 632 833 632H962Q977 632 976 616C970 575 932 542 897 542H640C602 542 565 575 559 616Q557 632 571 632Z"/>
+    </g>
+    <!-- gloss: light catching the top of each tier -->
+    <g fill="url(#gloss)">
+      <path d="M610 383H928Q942 383 940 368C925 300 860 256 785 256H750C676 256 612 300 598 368Q596 383 610 383Z"/>
+      <path d="M510 552H548Q556 552 562 546C580 528 605 515 638 515H898C931 515 956 528 974 546Q980 552 988 552H1028Q1040 552 1040 540C1040 470 975 411 902 411H634C561 411 497 470 497 540Q497 552 510 552Z"/>
+      <path d="M571 632H704C725 632 741 648 741 670V740Q741 751 752 751H784Q795 751 795 740V670C795 648 811 632 833 632H962Q977 632 976 616C970 575 932 542 897 542H640C602 542 565 575 559 616Q557 632 571 632Z"/>
+    </g>
+  </svg>
+</svg>

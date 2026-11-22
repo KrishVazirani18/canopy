@@ -1,0 +1,4 @@
+TypeError: Cannot read properties of undefined (reading 'reduce')
+    at file:///srv/orders-api/src/server.js:8:85
+    at Array.map (<anonymous>)
+    at file:///srv/orders-api/src/server.js:8:36

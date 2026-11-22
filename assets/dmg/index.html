@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Canopy DMG window</title>
+<style>
+  :root { --ink: #1d1d1f; --muted: #6e6e73; --faint: #a1a1a6; --line: #d9d9de; }
+  * { box-sizing: border-box; margin: 0; }
+  body { min-height: 100vh; display: grid; place-items: center; background: #e9e9ec;
+         font: 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; color: var(--ink); }
+
+  /* The Finder window the DMG opens in */
+  .win { width: 640px; border-radius: 12px; overflow: hidden; background: #fff;
+         box-shadow: 0 0 0 .5px rgba(0,0,0,.18), 0 22px 60px rgba(0,0,0,.22); }
+  .bar { height: 28px; display: flex; align-items: center; position: relative; background: #f6f6f7; border-bottom: .5px solid var(--line); }
+  .lights { display: flex; gap: 8px; padding-left: 12px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .lights i:nth-child(1) { background: #ff5f57; } .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+  .title { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 600; font-size: 13px; color: #4a4a4f; pointer-events: none; }
+
+  /* The background image itself: 640 × 400 */
+  .bg { height: 400px; position: relative; background: #fbfbfa; }
+  .row { position: absolute; top: 104px; left: 0; right: 0; display: grid; grid-template-columns: 220px 120px 220px; justify-content: center; align-items: center; }
+  .item { justify-self: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .item img { width: 128px; height: 128px; display: block; }
+  .item img.app { transform: scale(1.06); }
+  .item span { font-size: 13px; color: var(--ink); }
+  .arrow { justify-self: center; margin-top: -28px; }
+  .hint { position: absolute; left: 0; right: 0; top: 300px; text-align: center; font-size: 14px; color: var(--muted); }
+  .first { position: absolute; left: 0; right: 0; bottom: 26px; text-align: center; font-size: 12px; color: var(--muted); }
+  .first b { font-weight: 500; color: #48484d; }
+</style>
+</head>
+<body>
+  <div class="win">
+    <div class="bar"><div class="lights"><i></i><i></i><i></i></div><div class="title">Canopy</div></div>
+    <div class="bg">
+      <div class="row">
+        <div class="item"><img class="app" src="canopy.png" alt=""><span>Canopy</span></div>
+        <svg class="arrow" width="88" height="24" viewBox="0 0 88 24" fill="none" aria-hidden="true">
+          <path d="M4 12H82" stroke="#9a9aa0" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M74 4L83 12L74 20" stroke="#9a9aa0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="item"><img src="apps.png" alt=""><span>Applications</span></div>
+      </div>
+      <p class="hint">Drag Canopy into Applications</p>
+          </div>
+  </div>
+</body>
+</html>

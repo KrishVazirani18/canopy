@@ -1,0 +1,42 @@
+/* The building blocks' default look for what lives in the widget's own DOM: options in a pick, a preview's stack, a
+   tune's labels. Everything is inside :where(), so it weighs nothing: any rule the widget writes wins. Adopted by the
+   frame's page (main.ts) after base.css. Colors are the host's variables only; the content keeps its own. */
+
+/* ---- pick: an option is anything with option="…" ---- */
+:where(canopy-pick [option]) { position: relative; border-radius: var(--border-radius-lg); cursor: default; outline: none; transition: background-color 120ms, box-shadow 120ms, opacity 160ms; }
+:where(canopy-pick figure[option]) { margin: 0; }
+:where(canopy-pick [option]:has(> canopy-caption)) { display: flex; flex-direction: column; padding: 6px; }
+:where(canopy-pick:not([data-locked]) [option]:hover), :where(canopy-pick:not([multiple], [data-locked]) [option][data-shown]:not([data-picked])) { background: color-mix(in oklch, var(--color-background-hover) 55%, transparent); }
+:where(canopy-pick [option][data-picked]) { background: var(--color-background-hover); box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-text-primary) 40%, transparent); }
+:where(canopy-pick[data-locked] [option]:not([data-picked])) { opacity: 0.45; }
+:where(canopy-pick[data-locked] [option]) { pointer-events: none; }
+/* A button or chip used as an option keeps its own shape; picked, it reads as pressed. */
+:where(canopy-pick button[option][data-picked]) { border-color: color-mix(in oklch, var(--color-text-primary) 40%, transparent); }
+
+/* ---- preview: one cell, as tall as its tallest child; only the one shown is seen ---- */
+canopy-preview { display: grid; min-width: 0; }
+canopy-preview > * { grid-area: 1 / 1; min-width: 0; transition: opacity 150ms ease-out; }
+canopy-preview > [for]:not([data-shown]) { opacity: 0; pointer-events: none; }
+
+/* ---- scale, compare, shot, markup: blocks of their own ---- */
+:where(canopy-scale, canopy-compare, canopy-tune, canopy-markup, canopy-review, canopy-rank, canopy-shot, canopy-pick, canopy-preview) { display: block; min-width: 0; }
+:where(canopy-preview) { display: grid; }
+
+/* ---- tune: a label over its slider, the value at the right of its words ---- */
+:where(canopy-tune label:has(> input[type="range"])) { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; row-gap: 4px; align-items: baseline; color: var(--color-text-secondary); }
+:where(canopy-tune label:has(> input[type="range"])) > :where(input[type="range"]) { grid-row: 2; grid-column: 1 / -1; }
+:where(canopy-tune label[data-value]:has(> input[type="range"]))::after { content: attr(data-value); color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
+:where(canopy-tune label:has(> input[type="checkbox"], > select, > input[type="color"])) { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--color-text-secondary); }
+:where(canopy-tune input[type="color"]) { width: 28px; height: 20px; padding: 0; border: 1px solid var(--color-border-secondary); border-radius: 6px; background: transparent; }
+:where(canopy-tune input[type="color"])::-webkit-color-swatch-wrapper { padding: 2px; }
+:where(canopy-tune input[type="color"])::-webkit-color-swatch { border: 0; border-radius: 4px; }
+:where(canopy-tune[data-locked]) :where(input, select) { opacity: 0.6; }
+
+/* ---- still being written (data-writing, set by the page while the HTML streams in) ---- */
+/* An option half there shows a shimmer in its place, not half a design; a preview with nothing to show yet shimmers
+   in its room. Both go the moment the widget is whole. */
+@keyframes canopy-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+:where(canopy-pick [option][data-writing]) { min-height: 72px; border-radius: var(--border-radius-lg); background: linear-gradient(100deg, var(--color-background-tertiary) 30%, color-mix(in oklch, var(--color-text-primary) 11%, var(--color-background-tertiary)) 50%, var(--color-background-tertiary) 70%) 0 0 / 300% 100%; animation: canopy-shimmer 1.6s linear infinite; }
+:where(canopy-pick [option][data-writing]) > :not(canopy-caption, canopy-scale) { visibility: hidden; }
+html[data-streaming] canopy-preview:not(:has(> [data-shown]:not([data-writing]))) { min-height: 160px; border-radius: var(--border-radius-lg); background: linear-gradient(100deg, var(--color-background-tertiary) 30%, color-mix(in oklch, var(--color-text-primary) 11%, var(--color-background-tertiary)) 50%, var(--color-background-tertiary) 70%) 0 0 / 300% 100%; animation: canopy-shimmer 1.6s linear infinite; }
+@media (prefers-reduced-motion: reduce) { :where(canopy-pick [option][data-writing]), html[data-streaming] canopy-preview { animation: none; } }

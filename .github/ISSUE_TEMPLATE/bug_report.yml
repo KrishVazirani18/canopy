@@ -1,0 +1,60 @@
+name: Bug report
+description: Something in Canopy is broken or behaves wrongly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Before you post, take out anything private: chat content, file paths, account emails and keys.
+
+        For a security problem, do not use this form. Report it privately from the Security tab.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, step by step, and what Canopy did.
+      placeholder: |
+        1. Opened two chats in Multi mode
+        2. Sent a message in the second one
+        3. The first chat's reply stopped
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: In Canopy's Settings, click Copy Versions and paste the result here. It lists Canopy, Claude Code and Codex.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac
+      description: Your macOS version and chip.
+      placeholder: macOS 26.1, Apple M3
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does it happen?
+      options:
+        - Claude chats
+        - Codex chats
+        - Both
+        - Not in a chat
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: The lines from around the time it happened. Canopy's log opens from Settings. Read what you paste first, and take out chat content, file paths and keys.
+      render: text

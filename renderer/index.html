@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Canopy</title>
+    <link rel="icon" type="image/svg+xml" href="./logo.svg" />
+    <style>html,body{margin:0;background:#ffffff}html.dark,html.dark body{background:#181715}html[data-style=default],html[data-style=default] body{background:#fbfaf7}html[data-style=default].dark,html[data-style=default].dark body{background:#1f1f1f}html[data-vibrancy][data-style=notebook],html[data-vibrancy][data-style=notebook] body{background:transparent}#boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}#boot svg{width:40px;height:40px;color:#2a8450}html.dark #boot svg{color:oklch(.72 .14 150)}.grow path{transform-box:fill-box;transform-origin:50% 100%;animation:tier-in .6s cubic-bezier(.22,1,.36,1) both,tier-wave 2.6s ease-in-out infinite;animation-delay:calc(var(--t0,0ms) + var(--in)),calc(var(--t0,0ms) + var(--wave))}.grow path:nth-child(3){--in:0s;--wave:.8s}.grow path:nth-child(2){--in:.13s;--wave:1s}.grow path:nth-child(1){--in:.26s;--wave:1.2s}@keyframes tier-in{from{opacity:0;transform:translateY(22%) scale(.8)}}@keyframes tier-wave{0%,100%{opacity:1}50%{opacity:.45}}@media (prefers-reduced-motion:reduce){.grow path{animation:none}}</style>
+    <script>
+      // Match the Mac's light/dark setting, live.
+      const mq = matchMedia('(prefers-color-scheme: dark)');
+      window.__applyTheme = () => {
+        const pref = localStorage.getItem('canopy.theme') || 'system';
+        document.documentElement.classList.toggle('dark', pref === 'dark' || (pref === 'system' && mq.matches));
+        window.canopy?.setTheme?.(pref); // native vibrancy follows Canopy's theme, not the OS
+      };
+      document.documentElement.dataset.style = 'notebook';
+      // Set by the main process on macOS, where the window is an NSVisualEffectView (see src/main.mjs).
+      if (new URLSearchParams(location.search).get('vibrancy') === '1') document.documentElement.dataset.vibrancy = '';
+      window.__applyTheme(); mq.addEventListener('change', window.__applyTheme);
+      // Dev safety net: on restart the UI can be rebuilt while it's loading, so a code file it asks for may be
+      // gone ("Failed to fetch dynamically imported module"). Reload once instead of sitting on a blank window.
+      (() => {
+        const stale = (m) => /dynamically imported module|Importing a module script failed|error loading dynamically imported/i.test(String(m || ''));
+        const reload = () => { const k = 'canopy.boot.reload', last = +sessionStorage.getItem(k) || 0; if (Date.now() - last > 8000) { sessionStorage.setItem(k, String(Date.now())); setTimeout(() => location.reload(), 300); } };
+        window.addEventListener('vite:preloadError', (e) => { e.preventDefault(); reload(); });
+        window.addEventListener('unhandledrejection', (e) => { if (stale(e.reason?.message ?? e.reason)) reload(); });
+        window.addEventListener('error', (e) => { if (stale(e.message) || (e.target && e.target.tagName === 'SCRIPT')) reload(); }, true);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"><div id="boot" aria-hidden="true"><svg class="grow" viewBox="468 203 600 600" fill="currentColor"><path d="M610 383H928Q942 383 940 368C925 300 860 256 785 256H750C676 256 612 300 598 368Q596 383 610 383Z"/><path d="M510 552H548Q556 552 562 546C580 528 605 515 638 515H898C931 515 956 528 974 546Q980 552 988 552H1028Q1040 552 1040 540C1040 470 975 411 902 411H634C561 411 497 470 497 540Q497 552 510 552Z"/><path d="M571 632H704C725 632 741 648 741 670V740Q741 751 752 751H784Q795 751 795 740V670C795 648 811 632 833 632H962Q977 632 976 616C970 575 932 542 897 542H640C602 542 565 575 559 616Q557 632 571 632Z"/></svg></div></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

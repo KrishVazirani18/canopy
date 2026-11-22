@@ -1,0 +1,291 @@
+[
+ {
+  "type": "user",
+  "uuid": "00000000-0000-4000-8000-58a37935f18a",
+  "session_id": "00000000-0000-4000-8000-5dc4448e76a4",
+  "message": {
+   "role": "user",
+   "content": "Use the Write tool to create the file note.txt containing exactly: hi. Then reply with exactly: OK"
+  },
+  "parent_tool_use_id": null,
+  "parent_agent_id": null,
+  "timestamp": "2026-11-12T02:11:41.154Z",
+  "origin": {
+   "kind": "human"
+  }
+ },
+ {
+  "type": "assistant",
+  "uuid": "00000000-0000-4000-8000-54b08a543933",
+  "session_id": "00000000-0000-4000-8000-5dc4448e76a4",
+  "message": {
+   "model": "claude-haiku-5-5",
+   "id": "msg_0000000000002475d0bb2f81",
+   "type": "message",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "tool_use",
+     "id": "toolu_000000000000eda0bbd29fa4",
+     "name": "Write",
+     "input": {
+      "file_path": "/private/tmp/canopy-test-1/note.txt",
+      "content": "hi"
+     },
+     "caller": {
+      "type": "direct"
+     }
+    }
+   ],
+   "container": null,
+   "stop_reason": "tool_use",
+   "stop_sequence": null,
+   "stop_details": null,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 19917,
+    "output_tokens": 88,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 88,
+      "cache_read_input_tokens": 19917,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   },
+   "input_transformations": [],
+   "diagnostics": null,
+   "context_management": null
+  },
+  "parent_tool_use_id": null,
+  "parent_agent_id": null,
+  "timestamp": "2026-11-12T02:11:42.263Z"
+ },
+ {
+  "type": "user",
+  "uuid": "00000000-0000-4000-8000-921554701897",
+  "session_id": "00000000-0000-4000-8000-5dc4448e76a4",
+  "message": {
+   "role": "user",
+   "content": [
+    {
+     "tool_use_id": "toolu_000000000000eda0bbd29fa4",
+     "type": "tool_result",
+     "content": "File created successfully at: /private/tmp/canopy-test-1/note.txt (file state is current in your context — no need to Read it back)"
+    }
+   ]
+  },
+  "parent_tool_use_id": null,
+  "parent_agent_id": null,
+  "timestamp": "2026-11-12T02:11:42.280Z"
+ },
+ {
+  "type": "assistant",
+  "uuid": "00000000-0000-4000-8000-bad1c5f7de92",
+  "session_id": "00000000-0000-4000-8000-5dc4448e76a4",
+  "message": {
+   "model": "claude-haiku-5-5",
+   "id": "msg_00000000000099d8b814d2e5",
+   "type": "message",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "text",
+     "text": "OK"
+    }
+   ],
+   "container": null,
+   "stop_reason": "end_turn",
+   "stop_sequence": null,
+   "stop_details": null,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 20077,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 20077,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   },
+   "input_transformations": [],
+   "diagnostics": null,
+   "context_management": null
+  },
+  "parent_tool_use_id": null,
+  "parent_agent_id": null,
+  "timestamp": "2026-11-12T02:11:42.790Z"
+ },
+ {
+  "type": "user",
+  "uuid": "00000000-0000-4000-8000-73295bb731c4",
+  "session_id": "00000000-0000-4000-8000-5dc4448e76a4",
+  "message": {
+   "role": "user",
+   "content": "Count from 1 to 400, one number per line, and nothing else."
+  },
+  "parent_tool_use_id": null,
+  "parent_agent_id": null,
+  "timestamp": "2026-11-12T02:11:42.799Z",
+  "origin": {
+   "kind": "human"
+  }
+ },
+ {
+  "type": "assistant",
+  "uuid": "00000000-0000-4000-8000-be9bbe350ab5",
+  "session_id": "00000000-0000-4000-8000-5dc4448e76a4",
+  "message": {
+   "model": "claude-haiku-5-5",
+   "id": "msg_000000000000b3140acbaae8",
+   "type": "message",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "thinking",
+     "thinking": "I'm getting the user a list of numbers from 1 to 400, one per line, with nothing else in the reply.\n\n",
+     "signature": "CAQSogUKEAgTGAI4"
+    }
+   ],
+   "container": null,
+   "stop_reason": null,
+   "stop_sequence": null,
+   "stop_details": null,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 20129,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 2,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "speed": "standard"
+   },
+   "input_transformations": [],
+   "diagnostics": null,
+   "context_management": null
+  },
+  "parent_tool_use_id": null,
+  "parent_agent_id": null,
+  "timestamp": "2026-11-12T02:11:43.950Z"
+ },
+ {
+  "type": "assistant",
+  "uuid": "00000000-0000-4000-8000-5e0a2de76d4c",
+  "session_id": "00000000-0000-4000-8000-5dc4448e76a4",
+  "message": {
+   "model": "claude-haiku-5-5",
+   "id": "msg_000000000000b3140acbaae8",
+   "type": "message",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "text",
+     "text": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n31\n32\n33\n34\n35\n36\n37\n38\n39\n40\n41\n42\n43\n44\n45\n46\n47\n48\n49\n50\n51\n52\n53\n54\n55\n56\n57\n58\n59\n60\n61\n62\n63\n64\n65\n66\n67\n68\n69\n70\n71\n72\n73\n74\n75\n76\n77\n78\n79\n80\n81\n82\n83\n84\n85\n86\n87\n88\n89\n90\n91\n92\n93\n94\n95\n96\n97\n98\n99\n100\n101\n102\n103\n104\n105\n106\n107\n108\n109\n110\n111\n112\n113\n114\n115\n116\n117\n118\n119\n120\n121\n122\n123\n124\n125\n126\n127\n128\n129\n130\n131\n132\n133\n134\n135\n136\n137"
+    }
+   ],
+   "container": null,
+   "stop_reason": null,
+   "stop_sequence": null,
+   "stop_details": null,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 20129,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 2,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "speed": "standard"
+   },
+   "input_transformations": [],
+   "diagnostics": null,
+   "context_management": null
+  },
+  "parent_tool_use_id": null,
+  "parent_agent_id": null,
+  "timestamp": "2026-11-12T02:11:44.352Z"
+ },
+ {
+  "type": "user",
+  "uuid": "00000000-0000-4000-8000-712131401126",
+  "session_id": "00000000-0000-4000-8000-5dc4448e76a4",
+  "message": {
+   "role": "user",
+   "content": [
+    {
+     "type": "text",
+     "text": "[Request interrupted by user]"
+    }
+   ]
+  },
+  "parent_tool_use_id": null,
+  "parent_agent_id": null,
+  "timestamp": "2026-11-12T02:11:44.353Z"
+ },
+ {
+  "type": "user",
+  "uuid": "00000000-0000-4000-8000-7431304fca31",
+  "session_id": "00000000-0000-4000-8000-5dc4448e76a4",
+  "message": {
+   "role": "user",
+   "content": "<command-name>/context</command-name>\n            <command-message>context</command-message>\n            <command-args></command-args>"
+  },
+  "parent_tool_use_id": null,
+  "parent_agent_id": null,
+  "isCompletedLocalCommand": true,
+  "timestamp": "2026-11-12T02:11:44.357Z"
+ }
+]

@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Canopy</title>
+<meta name="description" content="Canopy for Mac: Claude Code and Codex in one window.">
+<meta name="theme-color" content="#0e0f0e">
+<link rel="icon" href="assets/logo.svg">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    background: #0e0f0e; color: #f2f3f1; overflow: hidden;
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; opacity: 0; animation: fade 1.8s ease-out .1s forwards; }
+  @keyframes fade { to { opacity: 1; } }
+  /* a soft pool of the page colour in the middle, so the light never touches the words */
+  .ground { position: fixed; left: 0; right: 0; bottom: 0; height: 32vh; background: linear-gradient(rgba(14,15,14,0), rgba(14,15,14,.45) 35%, rgba(14,15,14,.85) 70%, #0e0f0e 92%); pointer-events: none; }
+  .pool { position: fixed; inset: 0; background: radial-gradient(ellipse 30% 22% at 50% 50%, rgba(14,15,14,.85), rgba(14,15,14,0) 100%); }
+  main { position: relative; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
+  .brand { display: flex; align-items: center; gap: 16px; }
+  .brand svg { width: 56px; height: 56px; fill: currentColor; }
+  h1 { font-size: 48px; font-weight: 600; letter-spacing: -.035em; line-height: 1; }
+  .btn {
+    margin-top: 48px; height: 44px; padding: 0 20px; border-radius: 8px; display: inline-flex; align-items: center; gap: 8px;
+    background: #fff; color: #000; text-decoration: none; font-size: 14.5px; font-weight: 500; transition: opacity .15s;
+  }
+  .btn:hover { opacity: .9; }
+  .btn svg { width: 15px; height: 15px; }
+  .note { margin-top: 18px; font-size: 13px; color: rgba(242,243,241,.5); text-align: center; }
+  .note a { color: inherit; text-underline-offset: 3px; }
+  .note a:hover { color: rgba(242,243,241,.8); }
+  /* everything is in place in under a second and a half, once */
+  .in { opacity: 0; animation: in .6s cubic-bezier(.2,.7,.3,1) forwards; }
+  .brand.in { animation-delay: .15s; } .btn.in { animation-delay: .4s; } .note.in { animation-delay: .55s; }
+  @keyframes in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @media (max-width: 480px) { .brand svg { width: 44px; height: 44px; } h1 { font-size: 38px; } }
+  @media (prefers-reduced-motion: reduce) { .in, canvas { animation: none; opacity: 1; } }
+</style>
+</head>
+<body>
+  <canvas id="light" aria-hidden="true"></canvas>
+  <div class="ground"></div>
+  <div class="pool"></div>
+  <main>
+    <div class="brand in">
+      <svg viewBox="468 203 600 600" aria-hidden="true">
+        <path d="M610 383H928Q942 383 940 368C925 300 860 256 785 256H750C676 256 612 300 598 368Q596 383 610 383Z"/>
+        <path d="M510 552H548Q556 552 562 546C580 528 605 515 638 515H898C931 515 956 528 974 546Q980 552 988 552H1028Q1040 552 1040 540C1040 470 975 411 902 411H634C561 411 497 470 497 540Q497 552 510 552Z"/>
+        <path d="M571 632H704C725 632 741 648 741 670V740Q741 751 752 751H784Q795 751 795 740V670C795 648 811 632 833 632H962Q977 632 976 616C970 575 932 542 897 542H640C602 542 565 575 559 616Q557 632 571 632Z"/>
+      </svg>
+      <h1>Canopy</h1>
+    </div>
+    <a class="btn in" href="https://github.com/KrishVazirani18/canopy/releases/latest/download/Canopy.dmg">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8M4.75 7.5 8 10.75l3.25-3.25M3 13.5h10"/></svg>
+      Download for Mac
+    </a>
+    <p class="note in">macOS 13 or later, on Apple silicon or Intel.</p>
+  </main>
+<script>
+// A night forest painted in characters. Everything is drawn for real first on a small hidden canvas, one pixel per
+// character cell, then each cell's brightness picks a character and its kind picks a green: far mountains in haze,
+// a row of small pines on the ridge, mist drifting between the rows, leafy trees, pines and birches, and two big
+// trees framing the clearing where the name sits. Their feet stand in ground fog (the .ground fade), so the crowns
+// read clean and nothing piles up along the bottom edge. Edges get strokes that follow them
+// (/ \ | _), which is what makes the shapes read. On top, drawn straight on the page: stars and the Milky Way,
+// the odd shooting star, fireflies over the forest, a small flock now and
+// then, and an owl in the big tree that blinks. The trees sway in the wind; the scene itself stays put. The page
+// fades in once.
+(() => {
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const rand = (seed) => () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+  const clamp = (v) => Math.max(0, Math.min(1, v));
+  const hash = (i, j) => { const x = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453; return x - Math.floor(x); };
+  function makeNoise(seed) {
+    const r = rand(seed), N = 256;
+    const perm = Array.from({ length: N }, (_, i) => i).sort(() => r() - 0.5), val = Array.from({ length: N }, () => r());
+    const at = (x, y) => val[perm[(perm[x & 255] + (y & 255)) & 255]];
+    const s = (k) => k * k * (3 - 2 * k);
+    return (x, y) => {
+      const xi = Math.floor(x), yi = Math.floor(y), xf = s(x - xi), yf = s(y - yi);
+      const a = at(xi, yi), b = at(xi + 1, yi), c = at(xi, yi + 1), d = at(xi + 1, yi + 1);
+      return a + (b - a) * xf + (c - a) * yf + (a - b - c + d) * xf * yf;
+    };
+  }
+  const noise = makeNoise(5);
+  const RAMP = ' .:-=+*#%@';
+  const CW = 6, CH = 10;
+  // What a cell is, painted into the hidden canvas's blue channel (green is a full-strength marker, so blue / green
+  // survives antialiasing). Trees share one green; the sky and ground get their own.
+  const MOON = 30, MOUNT = 60, CLOUD = 90, TREE = 150, BIRCH = 190, FLOOR = 250;
+  const PALETTES = [
+    [MOON,  ['#1c2721', '#2a3a30', '#3d5244', '#55705c', '#729077', '#93ae96', '#b6cdb7', '#d6e6d4']],
+    [MOUNT, ['#131c1c', '#172322', '#1c2a28', '#21312f', '#273935']],
+    [CLOUD, ['#18211f', '#1e2926', '#25322e', '#2d3b37', '#364540', '#3f4f49']],
+    [TREE,  ['#16231a', '#1c2d21', '#233829', '#2b4532', '#33523b', '#3d6146', '#487152', '#55835f', '#62946c']],
+    [BIRCH, ['#1f2a22', '#2c3a2f', '#3e4f41', '#566a58', '#73897400', '#7d917e', '#9fb19f', '#c3d1c1'].map((c) => c.slice(0, 7))],
+    [FLOOR, ['#1c2417', '#242e1c', '#2d3822', '#374328', '#41502f']],
+  ];
+  const paletteFor = (code) => { let best = PALETTES[3][1], d = 999; for (const [k, p] of PALETTES) if (Math.abs(k - code) < d) { d = Math.abs(k - code); best = p; } return best; };
+
+  const c = document.getElementById('light'), g = c.getContext('2d');
+  const off = document.createElement('canvas'), o = off.getContext('2d', { willReadFrequently: true });
+  let W = 0, H = 0, cols = 0, rows = 0, S = 0;
+  let trees = [], stars = [], clouds = [], flies = [], ridge = [], moon = null, owl = null;
+  let ink = TREE;
+  const grey = (v, a = 1) => `rgba(${Math.round(255 * clamp(v))},255,${ink},${a})`;
+  const LAYERS = ['far', 'mid', 'near'];
+  const inClearing = (x, y) => Math.abs(x - W / 2) < Math.min(280, W * 0.38) && Math.abs(y - H / 2) < 120;
+
+  function plan() {
+    S = Math.min(H, W * 1.1); // tree scale: the window height, unless it is a narrow phone
+    const r = rand(11), sr = rand(23);
+    moon = { x: W * (W > 700 ? 0.8 : 0.72), y: H * 0.16, r: Math.max(30, S * 0.075) };
+    // stars: scattered, plus a denser, dimmer band across the sky (the Milky Way)
+    stars = [];
+    const n = Math.round(W * H / 6000);
+    for (let k = 0; k < n; k++) {
+      const x = sr() * W, y = Math.pow(sr(), 1.4) * H * 0.62;
+      if (Math.hypot(x - moon.x, y - moon.y) < moon.r * 2.4 || inClearing(x, y)) continue;
+      stars.push({ x, y, b: 0.3 + sr() * 0.7, speed: 0.4 + sr() * 1.2, phase: sr() * 6.3 });
+    }
+    for (let k = 0; k < n * 1.6; k++) {
+      const u = sr(), x = u * W, mid = H * (0.05 + u * 0.38), y = mid + (sr() + sr() + sr() - 1.5) * H * 0.07;
+      if (y < 0 || y > H * 0.6 || Math.hypot(x - moon.x, y - moon.y) < moon.r * 3 || inClearing(x, y)) continue;
+      stars.push({ x, y, b: 0.15 + sr() * 0.35, speed: 0.3 + sr() * 0.8, phase: sr() * 6.3, dust: true });
+    }
+    clouds = [0, 1, 2].map((k) => ({ x: sr() * W, y: H * (0.08 + k * 0.1 + sr() * 0.05), w: W * (0.16 + sr() * 0.12), speed: 0.004 + sr() * 0.004 }));
+    // far mountains: a soft ridge line behind everything
+    ridge = [];
+    for (let x = -80; x <= W + 80; x += 40) ridge.push([x, H * (0.7 + 0.06 * Math.sin(x / W * 4.1 + 0.6) + 0.04 * Math.sin(x / W * 9.7 + 2) + (sr() - 0.5) * 0.015)]);
+
+    trees = [];
+    const add = (kind, layer, x, base, h, light) => {
+      const rr = rand(Math.floor(x * 7 + h * 13) + 1);
+      const t = { kind, layer, x, base, h, light, phase: rr() * 6 };
+      if (kind === 'round' || kind === 'bush' || kind === 'birch') {
+        // a dome of leaf clumps (a bush sits low, a birch's are few and small)
+        const cr = h * (kind === 'bush' ? 0.55 : kind === 'birch' ? 0.22 : 0.3), cy = kind === 'bush' ? -h * 0.42 : -h * (kind === 'birch' ? 0.74 : 0.66);
+        const count = kind === 'birch' ? 6 : kind === 'bush' ? 6 : 9;
+        t.clumps = [];
+        for (let k = 0; k < count; k++) {
+          const a = -Math.PI + (k / (count - 1)) * Math.PI + (rr() - 0.5) * 0.3;
+          const spread = kind === 'birch' ? 0.7 : 0.62;
+          t.clumps.push([Math.cos(a) * cr * spread, cy + Math.sin(a) * cr * (kind === 'birch' ? 1.2 : 0.55) + cr * 0.2, cr * (0.42 + rr() * 0.16)]);
+        }
+        t.clumps.push([0, cy - cr * 0.05, cr * 0.62]);
+        if (kind !== 'birch') t.clumps.push([(rr() - 0.5) * cr * 0.5, cy + cr * 0.35, cr * 0.5]);
+      }
+      trees.push(t);
+    };
+    for (let x = -10; x < W + 20; x += 30 + r() * 36) add('pine', 'far', x, H * (0.86 + r() * 0.03), S * (0.1 + r() * 0.09), 0.5);
+    let x = 20 + r() * 40;
+    while (x < W) {
+      const roll = r(), kind = roll < 0.5 ? 'round' : roll < 0.75 ? 'pine' : 'birch';
+      const h = S * (0.26 + r() * 0.1) * (0.75 + Math.abs(x / W - 0.5) * 0.8);
+      if (Math.abs(x / W - 0.5) > 0.17) add(kind, 'mid', x, H * (0.96 + r() * 0.02), h, 0.75);
+      x += h * (kind === 'round' ? 1.0 : 0.75) + 50 + r() * 60;
+    }
+    const L = Math.max(W * 0.1, S * 0.2);
+    add('round', 'near', L, H * 1.02, S * 0.6, 1);
+    add('pine', 'near', W - Math.max(W * 0.05, S * 0.08), H * 1.02, S * 0.7, 1);
+    // an owl sits on the big tree's right limb
+    owl = { x: L + S * 0.6 * 0.11, y: H * 1.02 - S * 0.6 * 0.69, next: 2500 };
+    // fireflies over the forest floor, kept out of the clearing
+    flies = [];
+    const fr = rand(31), nf = Math.max(12, Math.round(W / 50));
+    while (flies.length < nf) {
+      const fx = fr() * W, fy = H * (0.58 + fr() * 0.22);
+      if (inClearing(fx, fy)) continue;
+      flies.push({ x: fx, y: fy, sp: 0.5 + fr(), ph: fr() * 6.3, ph2: fr() * 6.3, blink: 0.4 + fr() * 0.8, depth: fr() });
+    }
+  }
+
+  function drawRound(t) {
+    const h = t.h, tw = h * 0.045;
+    o.fillStyle = grey(t.light * 0.55);
+    o.beginPath(); o.moveTo(-tw * 1.4, 0); o.lineTo(-tw * 0.6, -h * 0.6); o.lineTo(tw * 0.6, -h * 0.6); o.lineTo(tw * 1.4, 0); o.fill();
+    o.strokeStyle = grey(t.light * 0.5); o.lineCap = 'round'; o.lineWidth = tw * 0.9;
+    o.beginPath(); o.moveTo(0, -h * 0.45); o.lineTo(-h * 0.12, -h * 0.66); o.moveTo(0, -h * 0.5); o.lineTo(h * 0.11, -h * 0.7); o.stroke();
+    clumps(t);
+  }
+  function drawBush(t) { clumps(t); }
+  function drawBirch(t) {
+    const h = t.h, tw = h * 0.028;
+    ink = BIRCH;
+    o.fillStyle = grey(t.light * 0.95);
+    o.fillRect(-tw, -h * 0.8, tw * 2, h * 0.8);
+    // the dark marks on a birch's bark
+    o.fillStyle = 'rgba(0,0,0,0.85)';
+    for (let y = -h * 0.08; y > -h * 0.78; y -= h * 0.09) o.fillRect(y % 2 ? -tw : 0, y, tw, h * 0.018);
+    ink = TREE;
+    clumps(t);
+  }
+  function clumps(t) {
+    for (const [cx, cy, rad] of t.clumps) {
+      const grd = o.createRadialGradient(cx - rad * 0.4, cy - rad * 0.45, rad * 0.05, cx, cy, rad);
+      grd.addColorStop(0, grey(t.light)); grd.addColorStop(0.7, grey(t.light * 0.55)); grd.addColorStop(0.97, grey(t.light * 0.3)); grd.addColorStop(1, grey(0, 0));
+      o.fillStyle = grd; o.beginPath(); o.arc(cx, cy, rad, 0, Math.PI * 2); o.fill();
+    }
+  }
+  function drawPine(t) {
+    const h = t.h, w = h * 0.42;
+    o.fillStyle = grey(t.light * 0.5);
+    o.fillRect(-h * 0.025, -h * 0.2, h * 0.05, h * 0.2);
+    for (let k = 0; k < 4; k++) {
+      const top = -h * (1 - k * 0.19), bottom = -h * (0.58 - k * 0.13), half = w * (0.42 + k * 0.2) / 2;
+      const grd = o.createLinearGradient(-half, 0, half, 0);
+      grd.addColorStop(0, grey(t.light)); grd.addColorStop(0.5, grey(t.light * 0.7)); grd.addColorStop(1, grey(t.light * 0.35));
+      o.fillStyle = grd;
+      o.beginPath(); o.moveTo(0, top); o.lineTo(half, bottom); o.quadraticCurveTo(0, bottom - h * 0.04, -half, bottom); o.closePath(); o.fill();
+    }
+  }
+
+  // Paint the scene, in cell units, at time t.
+  function paint(t) {
+    o.setTransform(1, 0, 0, 1, 0, 0);
+    o.fillStyle = '#000'; o.fillRect(0, 0, cols, rows);
+    o.setTransform(1 / CW, 0, 0, 1 / CH, 0, 0);
+    // clouds drifting right, wrapping round
+    ink = CLOUD;
+    for (const cl of clouds) {
+      const span = W + cl.w * 2, x = ((cl.x + t * cl.speed) % span + span) % span - cl.w;
+      for (const [dx, dy, sc] of [[0, 0, 1], [cl.w * 0.3, -8, 0.6], [-cl.w * 0.28, 4, 0.55]]) blob(x + dx, cl.y + dy, cl.w * 0.5 * sc, 22 * sc + 8, 0.2);
+    }
+    // the mountains, faint in the haze
+    ink = MOUNT;
+    o.fillStyle = (() => { const gr = o.createLinearGradient(0, H * 0.62, 0, H * 0.9); gr.addColorStop(0, grey(0.2)); gr.addColorStop(1, grey(0.12)); return gr; })();
+    o.beginPath(); o.moveTo(ridge[0][0], H);
+    for (const [x, y] of ridge) o.lineTo(x, y);
+    o.lineTo(ridge.at(-1)[0], H); o.closePath(); o.fill();
+    // only the tops show: they fade into the dark below, so the trees in front keep clean edges
+    { const fade = o.createLinearGradient(0, H * 0.72, 0, H * 0.84); fade.addColorStop(0, 'rgba(0,0,0,0)'); fade.addColorStop(1, '#000');
+      o.fillStyle = fade; o.fillRect(0, H * 0.72, W, H * 0.28); }
+    // the ground
+    ink = FLOOR;
+    o.fillStyle = grey(0.16);
+    o.beginPath(); o.moveTo(0, H);
+    for (let x = 0; x <= W + 20; x += 20) o.lineTo(x, H * (0.925 + 0.012 * Math.sin(x / W * 7 + 1) + 0.006 * Math.sin(x / W * 23)));
+    o.lineTo(W, H); o.closePath(); o.fill();
+    for (const layer of LAYERS) {
+      for (const tr of trees) {
+        if (tr.layer !== layer) continue;
+        ink = TREE;
+        const sway = Math.sin(t / 1700 + tr.phase) * 0.012 * (1 + LAYERS.indexOf(layer) * 0.6);
+        o.setTransform(1 / CW, 0, 0, 1 / CH, (tr.x) / CW, (tr.base) / CH);
+        o.rotate(sway);
+        if (tr.kind === 'round') drawRound(tr); else if (tr.kind === 'bush') drawBush(tr); else if (tr.kind === 'birch') drawBirch(tr); else drawPine(tr);
+      }
+      o.setTransform(1 / CW, 0, 0, 1 / CH, 0, 0);
+      // mist lies between the far ridge of pines and the trees in front, drifting slowly
+      if (layer === 'far') {
+        ink = CLOUD;
+        for (let k = 0; k < 7; k++) {
+          const span = W + 600, mx = ((k * 260 + t * 0.006 * (1 + (k % 3) * 0.3)) % span + span) % span - 300;
+          blob(mx, H * (0.83 + 0.03 * Math.sin(k * 1.7)), 220 + (k % 3) * 60, 22, 0.13);
+        }
+      }
+    }
+  }
+  function blob(x, y, rx, ry, a) {
+    const grd = o.createRadialGradient(x, y, 0, x, y, rx);
+    grd.addColorStop(0, grey(1, a)); grd.addColorStop(1, grey(1, 0));
+    o.save(); o.translate(x, y); o.scale(1, ry / rx); o.translate(-x, -y);
+    o.fillStyle = grd; o.beginPath(); o.arc(x, y, rx, 0, Math.PI * 2); o.fill(); o.restore();
+  }
+
+  function draw(t) {
+    paint(t);
+    const px = o.getImageData(0, 0, cols, rows).data;
+    g.clearRect(0, 0, W, H);
+    g.font = '9px ui-monospace, SFMono-Regular, Menlo, monospace';
+    g.textBaseline = 'top';
+    const lum = (i, j) => (i < 0 || j < 0 || i >= cols || j >= rows) ? 0 : px[(j * cols + i) * 4] / 255;
+    const wind = t / 1800;
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+      const v = lum(i, j);
+      const k = (j * cols + i) * 4, code = px[k + 1] ? px[k + 2] / px[k + 1] * 255 : TREE, pal = paletteFor(code);
+      // outlines: along each silhouette, a stroke that follows the edge (/ \ | _)
+      const gx = (lum(i + 1, j - 1) + 2 * lum(i + 1, j) + lum(i + 1, j + 1)) - (lum(i - 1, j - 1) + 2 * lum(i - 1, j) + lum(i - 1, j + 1));
+      const gy = (lum(i - 1, j + 1) + 2 * lum(i, j + 1) + lum(i + 1, j + 1)) - (lum(i - 1, j - 1) + 2 * lum(i, j - 1) + lum(i + 1, j - 1));
+      const mag = Math.hypot(gx, gy * 1.4);
+      let ch, tone;
+      if (code < FLOOR - 20 && mag > 0.55 && Math.max(v, lum(i + Math.sign(gx), j + Math.sign(gy))) > 0.3 && Math.min(v, lum(i - Math.sign(gx), j - Math.sign(gy))) < 0.2) {
+        const a = Math.abs(Math.atan2(gy * 1.4, gx)) * 180 / Math.PI;
+        ch = a < 25 || a > 155 ? '|' : a > 65 && a < 115 ? '_' : (gx * gy > 0 ? '/' : '\\');
+        tone = Math.min(1, Math.max(v, 0.35) + 0.25);
+      } else {
+        if (v < 0.07) continue;
+        if (Math.abs(code - FLOOR) < 20 && hash(i, j) > 0.16) continue; // the ground: a sparse speckle, not a texture in every cell
+        tone = Math.pow(v, 0.85);
+        // leaves rustle: the inside of a crown shimmers as the wind passes through it
+        if (Math.abs(code - TREE) < 20 && v > 0.25) tone = clamp(tone + (noise(i * 0.22 + wind * 1.6, j * 0.3 - wind * 0.4) - 0.5) * 0.3);
+        ch = RAMP[Math.min(RAMP.length - 1, Math.max(1, Math.floor(tone * RAMP.length)))];
+      }
+      g.fillStyle = pal[Math.min(pal.length - 1, Math.floor(tone * pal.length))];
+      g.fillText(ch, i * CW, j * CH);
+    }
+
+    // the moon: a full moon, drawn cell by cell as a lit sphere (light from the upper left), a few soft craters,
+    // and a sparse glow around it. No outline strokes: its edge is just where the light ends.
+    {
+      const { x: mx, y: my, r } = moon, MR = ' .:-=+*#%@', MP = PALETTES[0][1];
+      const i0 = Math.floor((mx - r * 1.9) / CW), i1 = Math.ceil((mx + r * 1.9) / CW);
+      const j0 = Math.floor((my - r * 1.9) / CH), j1 = Math.ceil((my + r * 1.9) / CH);
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const dx = (i * CW + CW / 2 - mx) / r, dy = (j * CH + CH / 2 - my) / r, d = Math.hypot(dx, dy);
+        if (d > 1.9) continue;
+        g.fillStyle = '#0e0f0e'; g.fillRect(i * CW, j * CH, CW, CH);
+        if (d > 1) {
+          // the glow: thinning out with distance, never a block
+          const p = Math.pow(1 - (d - 1) / 0.9, 3) * 0.32;
+          if (hash(i, j + 50) < p) { g.fillStyle = d < 1.3 ? '#3d5244' : '#2a3a30'; g.fillText(d < 1.25 && hash(i, j) < 0.4 ? ':' : '.', i * CW, j * CH); }
+          continue;
+        }
+        // evenly bright like a full moon, a touch brighter up and to the left, darker seas in soft patches
+        const nz = Math.sqrt(Math.max(0, 1 - d * d));
+        const lit = Math.max(0, -dx * 0.25 - dy * 0.2 + nz * 0.95);
+        const sea = Math.max(0, noise(dx * 1.8 + 11, dy * 1.8 + 7) - 0.5) * 2;
+        const pit = Math.max(0, noise(dx * 6 + 3, dy * 6 + 19) - 0.72) * 2.5;
+        const tone = clamp(0.55 + lit * 0.42 - sea * 0.32 - pit * 0.25 - Math.max(0, d - 0.88) * 1.2);
+        g.fillStyle = MP[Math.min(MP.length - 1, Math.floor(tone * MP.length))];
+        g.fillText(MR[Math.max(1, Math.min(MR.length - 1, Math.floor(tone * MR.length)))], i * CW, j * CH);
+      }
+    }
+    // stars, each on its own slow clock; the Milky Way's are fainter and finer
+    for (const st of stars) {
+      const tw = st.b * (0.55 + 0.45 * Math.sin(t / 900 * st.speed + st.phase));
+      if (tw < 0.1) continue;
+      const i = Math.floor((st.x) / CW), j = Math.floor(st.y / CH);
+      if (st.dust) { g.fillStyle = tw > 0.35 ? '#4d6a58' : '#2f4337'; g.fillText(tw > 0.4 ? '·' : '.', i * CW, j * CH); continue; }
+      g.fillStyle = tw > 0.75 ? '#bfe3c6' : tw > 0.45 ? '#77a383' : '#3e5f48';
+      g.fillText(tw > 0.85 ? '*' : tw > 0.55 ? '+' : '.', i * CW, j * CH);
+    }
+    // now and then a shooting star, high up, gone in under a second
+    const lap = 13000, s = Math.floor((t + 6000) / lap), into = ((t + 6000) % lap) / 900;
+    if (t > 4000 && into < 1) {
+      const sr = rand(s * 97 + 3); sr();
+      const x0 = W * (0.15 + sr() * 0.7), y0 = H * (0.04 + sr() * 0.18), len = 14;
+      for (let k = 0; k < len; k++) {
+        const p = into * 1.4 - k * 0.025; if (p < 0 || p > 1) continue;
+        const x = x0 - p * W * 0.22, y = y0 + p * H * 0.1;
+        if (inClearing(x, y)) continue;
+        g.fillStyle = k === 0 ? '#e6f4e8' : `rgba(190,226,198,${(1 - k / len) * (1 - into) * 0.9})`;
+        g.fillText(k === 0 ? '*' : '/', Math.round(x / CW) * CW, Math.round(y / CH) * CH);
+      }
+    }
+    // the flock: four birds crossing every 40 seconds, wings beating
+    const flap = 40000, fk = ((t - 2500) % flap + flap) % flap / flap;
+    if (t > 2500 && fk < 0.6) {
+      const fx = -60 + (W + 120) * (fk / 0.6), fy = H * 0.24 + Math.sin(fk * 9) * 10;
+      g.fillStyle = '#5d7a68';
+      for (const [dx, dy, ph] of [[0, 0, 0], [-18, 9, 1], [-30, -6, 2], [-46, 14, 1]]) {
+        const up = (Math.floor(t / 220) + ph) % 2 === 0;
+        g.fillText(up ? 'v' : '-', Math.round((fx + dx) / CW) * CW, Math.round((fy + dy) / CH) * CH);
+      }
+    }
+    // fireflies: drifting low over the floor, each glowing and fading on its own clock
+    for (const f of flies) {
+      const b = Math.pow(Math.max(0, Math.sin(t / 1400 * f.blink + f.ph)), 3);
+      if (b < 0.05) continue;
+      const x = f.x + Math.sin(t / 3100 * f.sp + f.ph2) * 34, y = f.y + Math.cos(t / 2300 * f.sp + f.ph) * 16;
+      g.shadowColor = 'rgba(214,240,140,0.9)'; g.shadowBlur = 10 * b;
+      g.fillStyle = `rgba(222,244,160,${0.35 + b * 0.65})`;
+      g.fillText(b > 0.5 ? '*' : '·', x, y);
+    }
+    g.shadowBlur = 0;
+    // the owl: two eyes in the big tree, blinking now and then
+    if (owl) {
+      const ox = owl.x, oy = owl.y;
+      const blink = (t % 5200) < 160 || ((t + 900) % 11000) < 140;
+      g.fillStyle = '#0e0f0e'; g.fillRect(ox - CW * 1.5, oy - 2, CW * 4, CH + 3);
+      g.fillStyle = blink ? '#55705c' : '#e3d58a';
+      g.fillText(blink ? '-' : 'o', ox - CW, oy); g.fillText(blink ? '-' : 'o', ox + CW, oy);
+      g.fillStyle = '#3d5244'; g.fillText('v', ox, oy + 2);
+    }
+  }
+
+  const fit = () => {
+    const dpr = devicePixelRatio || 1; W = innerWidth; H = innerHeight;
+    c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cols = Math.ceil(W / CW); rows = Math.ceil(H / CH); off.width = cols; off.height = rows;
+    plan();
+  };
+
+  let last = 3000;
+  fit();
+  addEventListener('resize', () => { fit(); draw(last); });
+  if (still) { draw(last); return; }
+  const start = performance.now();
+  let prev = 0;
+  const tick = (now) => {
+    // about 30 frames a second: smooth enough for the fireflies, still a terminal's texture
+    if (now - prev > 32) {
+      prev = now;
+      last = now - start; draw(last);
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

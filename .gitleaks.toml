@@ -1,0 +1,20 @@
+# Secret scanning: gitleaks' own rules, minus the made-up values the unit tests need.
+# CI runs it on a fresh checkout: `gitleaks dir .` (before anything is installed, so node_modules is not read).
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Made-up keys in the unit tests. None was ever a working credential."
+targetRules = ["generic-api-key", "curl-auth-header"]
+condition = "AND"
+paths = ['''(^|/)src/core/test/unit/[^/]+\.test\.mjs$''']
+regexTarget = "match"
+regexes = [
+  '''NOT-A-REAL-KEY''',
+  '''sk-test-0123456789abcdefghijklmnopqrstuv''',
+  '''abcd1234efgh''',
+  '''abcdefgh12345678''',
+  '''tok_0123456789''',
+  '''zebra-quartz-0451''',
+]

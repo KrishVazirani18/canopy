@@ -1,0 +1,21 @@
+# Installed and built
+node_modules/
+dist-ui/
+dist/
+release/
+*.dmg
+*.zip
+
+# This Mac
+.DS_Store
+.env*
+*.log
+!scripts/widget-evals/project/error.log
+
+# Editors and tools
+.claude/
+.vscode/
+.idea/
+
+# What an official build is made with (src/build-config.mjs): written when a release is built, never committed
+src/build-config.json

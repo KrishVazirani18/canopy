@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    name: Scan, typecheck, test and build
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # Before anything is installed, so only the repository's own files are read. The rules are gitleaks' own,
+      # less the made-up keys the unit tests need (.gitleaks.toml).
+      - name: Scan for secrets
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_CLEANUP: 1
+        run: |
+          brew install gitleaks
+          gitleaks dir . --no-banner --redact
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test 2>&1 | tee test.log
+
+      # A test that cannot load the code it covers reports itself as skipped, so a skipped test fails the run.
+      - name: No skipped tests
+        env:
+          EXPECTED_SKIPPED: 0
+        run: |
+          skipped="$(grep -Eo 'skipped [0-9]+' test.log | tail -n 1 | grep -Eo '[0-9]+' || true)"
+          echo "Skipped: ${skipped:-not reported}"
+          test "${skipped:-1}" -eq "$EXPECTED_SKIPPED"
+
+      - name: Build the interface
+        run: npm run build:ui
