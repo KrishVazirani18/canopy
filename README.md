@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="assets/icon.png" width="88" height="88" alt="">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/readme/icon-dark.svg">
+    <img src=".github/readme/icon-light.svg" width="88" height="88" alt="">
+  </picture>
 </p>
 
 <h1 align="center">Canopy</h1>
