@@ -67,8 +67,7 @@ test('with no account chosen, Claude Code is launched with exactly the environme
     + '"ANTHROPIC_API_KEY":"sk-shell-key","CLAUDE_CODE_USE_BEDROCK":"1","ANTHROPIC_BASE_URL":"https://proxy.example","MY_VAR":"kept",'
     + '"CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS":"1","CLAUDE_CODE_STARTUP_FAILURE_RESULTS":"1",'
     + `"CLAUDE_AGENT_SDK_CLIENT_APP":"canopy/${VERSION}"${skills}}`);
-  assert.equal(new S.Session({ cwd: work }).appVersion, '0.0.1');
-  assert.equal(VERSION, '0.0.1', 'today the real version is the one chats already reported; when it moves, the client name follows it');
+  assert.equal(new S.Session({ cwd: work }).appVersion, '0.0.1', 'a session the app gave no version to says 0.0.1');
 });
 
 test('the other places Claude Code is launched get the same unchanged environment', { skip: noAccounts }, () => {
