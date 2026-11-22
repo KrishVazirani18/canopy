@@ -19,6 +19,11 @@
 //   5. drafts the release notes from the commits since the last release (RELEASE_NOTES.md; --notes-file to use your own)
 //   6. unless --dry-run: writes the version into package.json, commits and tags it, and publishes the release with gh
 //
+// An official release is built with the project's Canopy account (Google sign-in) and usage stats: their four values
+// (src/build-config.mjs) are written into src/build-config.json, which git ignores. They come from the file named by
+// CANOPY_BUILD_CONFIG, or from a src/build-config.json already there. Without them the release stops, so a build with
+// no sign-in and no stats can never go out by mistake. --unofficial builds without them (a fork of one's own).
+//
 // Other options: --arch arm64 (Apple silicon only), --out <folder>, --skip-tests, --previous-feed <file or address>
 // (where to read the release before from; the default is the published feed).
 import { execFileSync, spawn } from 'node:child_process';
@@ -30,6 +35,7 @@ import { fileURLToPath } from 'node:url';
 import { DMG_NAME, FEED_NAME, PRODUCT_NAME, RELEASE_REPO, downloadUrl, feedUrl, zipName, zipUrl } from '../src/app-info.mjs';
 import { parseFeed } from '../src/core/app-update.mjs';
 import { compareVersions } from '../src/core/upkeep.mjs';
+import { readBuildFile } from '../src/build-config.mjs';
 import { buildApp } from './build-app.mjs';
 import { makeDmg } from './make-dmg.mjs';
 
@@ -104,12 +110,44 @@ async function previousFeed(from, { dryRun }) {
   }
 }
 
-/** Runs the built app's check of itself. Throws with what failed. */
-async function selfTest(app) {
+const BUILD_CONFIG = path.join(ROOT, 'src', 'build-config.json');
+
+/**
+ * The project's sign-in and stats values for this build, from the file named by CANOPY_BUILD_CONFIG or the
+ * src/build-config.json already there. Throws when an official release would go out without all four.
+ * `unofficial`: build without them. Returns the four values, or null for an unofficial build. Writes nothing.
+ */
+export function loadBuildConfig({ unofficial = false, source = process.env.CANOPY_BUILD_CONFIG, target = BUILD_CONFIG } = {}) {
+  if (unofficial) return null;
+  const from = source ? path.resolve(source) : target;
+  let text;
+  try { text = fs.readFileSync(from, 'utf8'); } catch {
+    throw new Error(`An official release needs the project's sign-in and stats values, and ${source ? `${shown(from)} could not be read` : 'none were found'}.\n  Point CANOPY_BUILD_CONFIG at the file that holds them (src/build-config.mjs lists the four), or pass --unofficial for a build without them.`);
+  }
+  const values = readBuildFile(() => text);
+  const missing = Object.entries(values).filter(([, v]) => !v).map(([k]) => k);
+  if (missing.length) throw new Error(`${shown(from)} is missing ${missing.join(', ')}. An official release needs all four (src/build-config.mjs).`);
+  return values;
+}
+
+/**
+ * Puts the values in place for the build (src/build-config.json; null: no file, so no stale one rides along) and
+ * returns how to put things back as they were. Done only around the build: the tests run without the file, as in a
+ * copy built from source.
+ */
+export function placeBuildConfig(values, target = BUILD_CONFIG) {
+  const before = fs.existsSync(target) ? fs.readFileSync(target) : null;
+  if (values) fs.writeFileSync(target, `${JSON.stringify(values, null, 2)}\n`, { mode: 0o600 });
+  else fs.rmSync(target, { force: true });
+  return () => { if (before) fs.writeFileSync(target, before, { mode: 0o600 }); else fs.rmSync(target, { force: true }); };
+}
+
+/** Runs the built app's check of itself. Throws with what failed. `official`: it must have sign-in and stats. */
+async function selfTest(app, { official = false } = {}) {
   const data = fs.mkdtempSync(path.join(os.tmpdir(), 'canopy-selftest-'));
   try {
     const out = await new Promise((resolve, reject) => {
-      const child = spawn(path.join(app, 'Contents', 'MacOS', PRODUCT_NAME), [], { env: { ...process.env, CANOPY_USER_DATA: data, CANOPY_SELFTEST: '1' }, stdio: ['ignore', 'pipe', 'ignore'] });
+      const child = spawn(path.join(app, 'Contents', 'MacOS', PRODUCT_NAME), [], { env: { ...process.env, CANOPY_USER_DATA: data, CANOPY_SELFTEST: '1', ...(official ? { CANOPY_SELFTEST_OFFICIAL: '1' } : {}) }, stdio: ['ignore', 'pipe', 'ignore'] });
       let text = '';
       child.stdout.on('data', (d) => { text += d; });
       const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('the app did not finish checking itself within three minutes')); }, 180_000);
@@ -127,6 +165,7 @@ async function selfTest(app) {
 async function main(argv) {
   const flag = (name) => argv.includes(name);
   const option = (name) => { const i = argv.indexOf(name); return i === -1 ? undefined : argv[i + 1]; };
+  const unofficial = flag('--unofficial');
   const valued = ['--required', '--notes-file', '--arch', '--out', '--previous-feed'];
   const how = argv.find((a, i) => !a.startsWith('--') && !valued.includes(argv[i - 1]));
   const dryRun = flag('--dry-run');
@@ -161,6 +200,9 @@ async function main(argv) {
     if (attempt('gh', ['release', 'view', tag, '--repo', RELEASE_REPO]).ok) throw new Error(`${RELEASE_REPO} already has a release ${tag}.`);
   } else if (dirty) log('  (there are uncommitted changes: fine for a dry run, a real release refuses)');
   log(`  ${freeGb.toFixed(1)} GB free · publishing to ${RELEASE_REPO}${dryRun ? ' (not today)' : ''}`);
+  const buildConfig = loadBuildConfig({ unofficial });
+  const official = !!buildConfig;
+  log(official ? '  with the Canopy account (Google sign-in) and usage stats' : '  unofficial: no Canopy account and no usage stats in this build');
 
   const previous = await previousFeed(option('--previous-feed'), { dryRun });
   if (previous && compareVersions(version, previous.version) !== 1 && !dryRun) throw new Error(`${version} is not newer than ${previous.version}, which is already published.`);
@@ -178,9 +220,11 @@ async function main(argv) {
 
   // ---- 3. the app ----
   step('Building');
-  const built = await buildApp({ version, arch: option('--arch'), log: (m) => log(`  ${m}`) });
+  const restore = placeBuildConfig(buildConfig);
+  let built;
+  try { built = await buildApp({ version, arch: option('--arch'), log: (m) => log(`  ${m}`) }); } finally { restore(); }
   step('The app checks itself');
-  const report = await selfTest(built.app);
+  const report = await selfTest(built.app, { official });
   log(`  ${report.checks.length} checks passed on ${report.arch} (Electron ${report.electron})`);
 
   // ---- 4. the files of a release ----

@@ -1,26 +1,56 @@
 // Installing Claude Code and Codex (src/installers.mjs): which official route is taken, and what a failure says.
-// Nothing is installed: the command runner and the PATH check are stand-ins.
+// Nothing is installed: the command runner, the PATH check and the does-it-run check are stand-ins.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { install, installCommand, runShell } from '../../../installers.mjs';
+import { install, installRoutes, runShell } from '../../../installers.mjs';
 
 const has = (...bins) => async (b) => bins.includes(b);
+const yes = async () => true, no = async () => false;
 
-test('Claude Code uses Anthropic’s installer; Codex prefers Homebrew, then npm, else says what is missing', async () => {
-  assert.match((await installCommand('claude', {}, has())).cmd, /claude\.ai\/install\.sh/);
-  assert.equal((await installCommand('codex', {}, has('brew', 'npm'))).cmd, 'brew install --cask codex');
-  assert.equal((await installCommand('codex', {}, has('npm'))).cmd, 'npm install -g @openai/codex');
-  assert.equal(await installCommand('codex', {}, has()), null);
-  assert.match((await install('codex', { env: {}, exists: has() })).error, /Homebrew or Node\.js/);
+test('each tool tries its maker’s installer first, then Homebrew and npm when they are there', async () => {
+  const via = async (engine, ...bins) => (await installRoutes(engine, {}, has(...bins))).map((r) => r.via);
+  assert.deepEqual(await via('codex'), ['OpenAI’s installer']);
+  assert.deepEqual(await via('codex', 'brew', 'npm'), ['OpenAI’s installer', 'Homebrew', 'npm']);
+  assert.deepEqual(await via('claude', 'npm'), ['Anthropic’s installer', 'npm']);
+  const [codex] = await installRoutes('codex', {}, has());
+  assert.match(codex.cmd, /github\.com\/openai\/codex\/releases\/latest\/download\/install\.sh/);
+  assert.match(codex.cmd, /CODEX_NON_INTERACTIVE=1/);
+  assert.match((await installRoutes('claude', {}, has()))[0].cmd, /claude\.ai\/install\.sh/);
 });
 
-test('a run that works is ok; one that fails or times out says so in words', async () => {
+test('with no Homebrew and no Node, Codex still installs: OpenAI’s installer needs only curl', async () => {
   const ran = [];
-  const ok = await install('claude', { env: {}, exists: has(), run: async (cmd) => { ran.push(cmd); return { code: 0, tail: '' }; } });
-  assert.equal(ok.ok, true);
-  assert.match(ran[0], /install\.sh/);
-  assert.match((await install('claude', { env: {}, exists: has(), run: async () => ({ code: 1, tail: 'curl: (6)' }) })).error, /connection/);
-  assert.match((await install('claude', { env: {}, exists: has(), run: async () => ({ code: -1, tail: '', timedOut: true }) })).error, /too long/);
+  const r = await install('codex', { env: {}, exists: has(), runs: yes, run: async (cmd) => { ran.push(cmd); return { code: 0, tail: '' }; } });
+  assert.deepEqual(r, { ok: true, via: 'OpenAI’s installer' });
+  assert.equal(ran.length, 1);
+});
+
+test('a failed download is tried again, then the next route; the first that leaves a tool that runs wins', async () => {
+  const ran = [];
+  const results = [{ code: 22, tail: 'curl: (22) 503' }, { code: 22, tail: 'curl: (22) 503' }, { code: 0, tail: '' }];
+  const r = await install('codex', { env: {}, exists: has('brew'), runs: yes, run: async (cmd) => { ran.push(cmd); return results.shift(); } });
+  assert.deepEqual(r, { ok: true, via: 'Homebrew' });
+  assert.equal(ran.length, 3);
+  assert.equal(ran[2], 'brew install --cask codex');
+});
+
+test('an installer that says it worked but left nothing that runs does not count', async () => {
+  const r = await install('claude', { env: {}, exists: has(), runs: no, run: async () => ({ code: 0, tail: '' }) });
+  assert.match(r.error, /connection/);
+  assert.match(r.manual, /claude\.ai\/install\.sh/);
+});
+
+test('when every route fails it says so in words, and a timeout says it took too long', async () => {
+  assert.match((await install('claude', { env: {}, exists: has(), runs: yes, run: async () => ({ code: 1, tail: 'curl: (6)' }) })).error, /connection/);
+  assert.match((await install('codex', { env: {}, exists: has(), runs: yes, run: async () => ({ code: -1, tail: '', timedOut: true }) })).error, /too long/);
+});
+
+test('a broken download never runs: the script is saved to a file and run only if curl succeeded', async () => {
+  const [route] = await installRoutes('claude', {}, has());
+  const fake = route.cmd.replace('curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20', 'false').replace('/bin/bash "$f"', 'echo RAN');
+  const r = await runShell(fake, { PATH: process.env.PATH });
+  assert.notEqual(r.code, 0);
+  assert.doesNotMatch(r.tail, /RAN/);
 });
 
 test('runShell runs a real command and keeps the end of its output', async () => {

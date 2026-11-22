@@ -20,10 +20,12 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
+import { accountService } from './build-config.mjs';
 import { SWAP_HELPER, removeTree } from './core/app-update.mjs';
 import { CODE_MISSING, runScript } from './core/code-mode.mjs';
 import { canopyPlugin, kitDir } from './core/plugin.mjs';
 import { RELAY_MISSING } from './core/tool-relay.mjs';
+import { POSTHOG_KEY } from './telemetry/config.mjs';
 import { addDays, localDate, summarizeDays } from './telemetry/summary.mjs';
 
 const require = createRequire(import.meta.url);
@@ -44,6 +46,12 @@ export async function runSelfTest(o) {
   const expect = (cond, what) => { if (!cond) throw new Error(what); };
 
   await check('not a run from source', () => { expect(o.isDev === false, 'IS_DEV is true'); expect(o.app.getAppPath().endsWith('app.asar'), `the app is at ${o.app.getAppPath()}`); });
+  // An official release (scripts/release.mjs) must carry the project's sign-in and stats: without them the app quietly
+  // behaves like a copy built from source, with no Google sign-in and nothing sent.
+  if (process.env.CANOPY_SELFTEST_OFFICIAL === '1') {
+    await check('the Canopy account (Google sign-in) is built in', () => { expect(!!accountService().url, 'no sign-in address in src/build-config.json'); return new URL(accountService().url).host; });
+    await check('usage stats are built in', () => { expect(!!POSTHOG_KEY, 'no PostHog key in src/build-config.json'); return 'PostHog key present'; });
+  }
   await check('telemetry says prod', () => { expect(o.telemetryEnv === 'prod', `env is ${o.telemetryEnv}`); return o.telemetryEnv; });
   await check('the log is canopy.log', () => { expect(path.basename(o.logFile) === 'canopy.log', path.basename(o.logFile)); return path.basename(o.logFile); });
   await check('no Reload or developer tools in the menus', () => {

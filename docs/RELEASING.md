@@ -104,8 +104,11 @@ Releases are signed with the Developer ID "Developer ID Application: Krish Vazir
 ```
 export CANOPY_SIGN_IDENTITY="Developer ID Application: Krish Vazirani (99BZGU2598)"
 export APPLE_KEYCHAIN_PROFILE="canopy"
+export CANOPY_BUILD_CONFIG="/path/to/build-config.json"
 npm run release -- patch
 ```
+
+`CANOPY_BUILD_CONFIG` names the file with the project's sign-in and stats values (the four in `src/build-config.mjs`). They are not secrets, but they are the project's, so they are kept outside the repository and written into the build only when a release is made. Without them a release stops: a Canopy with no Google sign-in and no usage stats must never go out by mistake. The app checks itself for both before anything is published.
 
 The build then signs the app with the hardened runtime, has Apple notarize it (usually a few minutes), staples the ticket, and does the same for the disk image. Without `CANOPY_SIGN_IDENTITY` the build falls back to an ad hoc signature, and macOS asks people to allow the app once under Privacy & Security; don't publish one of those.
 

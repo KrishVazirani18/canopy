@@ -768,6 +768,11 @@ export default function Onboarding({ onFinish, design = true }: { onFinish?: () 
   // A copy built from source has no Canopy account (main says so): Hello goes straight on to setting things up.
   const [hasAccount, setHasAccount] = useState(true);
   useEffect(() => { accountBridge()?.get().then((v) => { if (!('error' in v) && v.available === false) setHasAccount(false); }).catch(() => {}); }, []);
+  // Onboarding is dark whatever the Mac's setting: while it is up, notices and toasts are dark too (ui/sonner.tsx).
+  useEffect(() => {
+    document.documentElement.dataset.onboarding = '1';
+    return () => { delete document.documentElement.dataset.onboarding; };
+  }, []);
   return (
     <Design.Provider value={design}>
     <div className="relative h-full w-full overflow-hidden bg-[#0e0f0e] text-white">
