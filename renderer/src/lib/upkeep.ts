@@ -58,6 +58,7 @@ export function applyModelFixups<T extends { value: string }>(models: T[]): T[] 
 function say(tool: string, n: UpkeepNote | null | undefined) {
   if (!n) return;
   const t = upkeepToast(tool, n);
+  if (!t) return;
   (t.good ? toast.success : toast)(t.title, { id: t.id, description: t.description });
 }
 

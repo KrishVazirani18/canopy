@@ -14,8 +14,10 @@ export type SessionSummary = { id: string; title: string; updated: number; branc
 /** What an open can ask for. `engine` only counts for a new chat (a saved one keeps the engine it started on).
  *  `replaceEmpty` (the main screen) and `replace` (a pane: the sid it held) let go of that chat if it was never used.
  *  `move` (a new chat only): the chat carries on from the chat `from`, which ran on the other maker. The two model
- *  names are the ones on screen at that moment; they are kept for the "Continued from / Continued in" lines. */
-export type OpenOpts = { engine?: Engine; replaceEmpty?: boolean; replace?: string; move?: { from: string; fromModel: string; toModel: string } };
+ *  names are the ones on screen at that moment; they are kept for the "Canopy switched from … → …" line.
+ *  `back` (a saved chat only): the chat being opened is gone back to from `from`, in the same thread, and is told
+ *  what happened while it was away. */
+export type OpenOpts = { engine?: Engine; replaceEmpty?: boolean; replace?: string; move?: { from: string; fromModel: string; toModel: string }; back?: { from: string; fromModel: string; toModel: string } };
 /** A model picker row, as Claude Code lists them. `supportsFastMode` is true on the models that have Fast and unset on the rest. */
 export type ClaudeModel = { value: string; displayName?: string; description?: string; resolvedModel?: string; supportsFastMode?: boolean };
 /** A model picker row for an OpenAI model, read live from Codex. The id goes over the wire as it is. */
@@ -228,6 +230,8 @@ export interface CanopyApi {
   dev?: boolean;
   init(): Promise<EnvInfo>;
   recheck(): Promise<EnvInfo>;
+  /** Turn on Canopy's notifications (src/main.mjs notifications:enable). Missing in the design harness. */
+  enableNotifications?(): Promise<{ ok: true; pending?: boolean } | { error: string; settings?: boolean }>;
   pickFolder(): Promise<string | null>;
   listSessions(cwd?: string): Promise<SessionSummary[] | { error: string }>;
   listFiles(cwd: string): Promise<string[] | { error: string }>;

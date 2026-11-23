@@ -1,7 +1,7 @@
 // The conversation, organized into turns, read like the terminal:
 //   your message → Claude's messages and its tool work in order, live → once done, all of that folds into
 //   "Worked for Ns" above the final answer → changed-file card.
-import { createContext, memo, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, createContext, memo, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { AlertTriangleIcon, ChevronRightIcon, CornerDownRightIcon, FileDiffIcon, CopyIcon, CheckIcon, MessageCircleQuestionIcon, PencilIcon, RotateCcwIcon, SquareTerminalIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -13,7 +13,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { api, type ImageAttachment } from '@/lib/api';
 import { widgetMemory } from '@/lib/widget-state';
-import { COMPACTING_STATUS, StoreContext, useStore, type Store, type AssistantItem, type CodeCall, type ErrorItem, type Item, type ThinkingItem, type ToolItem, type TurnItem, type UserItem } from '@/lib/store';
+import { COMPACTING_STATUS, StoreContext, useStore, type Store, type AssistantItem, type CodeCall, type ErrorItem, type HandoffItem, type Item, type ThinkingItem, type ToolItem, type TurnItem, type UserItem } from '@/lib/store';
 import { feature } from '@/lib/telemetry';
 import { ui, useUi } from '@/lib/ui';
 import { backgroundCount, editBlocked, filesLabel } from '@/lib/edit';
@@ -36,7 +36,7 @@ import { WidgetFrame } from './widget-frame';
 import { LiveOutput, OutputTail } from './live-output';
 import { Logo } from './logo';
 import { Reveal } from './reveal';
-import { HandoffLine } from './handoff-line';
+import { SwitchLine } from './handoff-line';
 import { ComputerUseIcon } from './computer-use-icon';
 import { ForestIcon, type ForestKind } from './forest-icons';
 import { InTaskCard, ToolLogos } from './tool-logos';
@@ -48,7 +48,8 @@ import { MemoryRow } from './memory-row';
 
 // ---------- turn model ----------
 // `all` is the turn in the order it happened; `work` and `answer` are the two halves it is shown as.
-type Turn = { key: string; user?: UserItem; all: Item[]; work: Item[]; answer: Item[]; end?: TurnItem; edits: ToolItem[]; startedAt: number };
+/** `before`: where the chat switched maker just before this turn ("Canopy switched from … → …", handoff-line.tsx). */
+type Turn = { key: string; user?: UserItem; all: Item[]; work: Item[]; answer: Item[]; end?: TurnItem; edits: ToolItem[]; startedAt: number; before?: HandoffItem[] };
 
 /** Claude said something: assistant text that isn't an empty block. */
 const isSaid = (it: Item): it is AssistantItem => it.t === 'assistant' && !!it.text.trim();
@@ -92,12 +93,20 @@ function settleWidgets(all: Item[]): Item[] {
   return drop.size ? all.filter((it) => !drop.has(it)).map((it) => swap.get(it) ?? it) : all;
 }
 
-function toTurns(items: Item[]): Turn[] {
+/** The chat's turns. `tail` gets the switch lines that no turn follows yet (a switch with no message since). */
+function toTurns(items: Item[], tail: HandoffItem[] = []): Turn[] {
   const turns: Turn[] = [];
   let cur: Turn | null = null;
-  const start = (user?: UserItem, key?: string) => { cur = { key: key ?? `t${turns.length}`, user, all: [], work: [], answer: [], edits: [], startedAt: user?.at ?? Date.now() }; turns.push(cur); return cur; };
+  let switched: HandoffItem[] = [];
+  const start = (user?: UserItem, key?: string) => {
+    cur = { key: key ?? `t${turns.length}`, user, all: [], work: [], answer: [], edits: [], startedAt: user?.at ?? Date.now(), ...(switched.length && { before: switched }) };
+    switched = [];
+    turns.push(cur);
+    return cur;
+  };
   for (const it of items) {
-    if (it.t === 'handoff') continue; // "Continued from / in": drawn by Transcript itself, above and below the turns
+    // Where the chat switched maker: drawn above the next turn, which it starts (a switch is never mid-turn).
+    if (it.t === 'handoff') { if (it.ev.dir === 'switch') { switched.push(it); cur = null; } continue; }
     // A message sent while Claude works goes into the running turn: the turn carries on (its work stays in view, no
     // "Done" yet) and the message sits where it was sent. Any other message starts a turn.
     if (it.t === 'user') {
@@ -139,6 +148,7 @@ function toTurns(items: Item[]): Turn[] {
     t.answer = [...head.filter((it) => it.t === 'error' || it.t === 'notice'), ...tail.filter((it) => it.t !== 'raw' && (it.t !== 'assistant' || isSaid(it)))];
     t.edits = t.work.filter((it): it is ToolItem => it.t === 'tool' && EDIT_TOOLS.has(it.name) && it.status !== 'error');
   }
+  tail.push(...switched);
   return turns;
 }
 
@@ -1516,7 +1526,8 @@ export function Transcript() {
   const [shown, setShown] = useState(PAGE);
   const [folds] = useState(() => new Map<string, boolean>()); // lives and dies with the chat: App keys Transcript by chat
   const [placed, setPlaced] = useState(false); // scrolled to where it opens: only then does it fade in
-  const turns = toTurns(items);
+  const tail: HandoffItem[] = [];
+  const turns = toTurns(items, tail);
   const hidden = Math.max(0, turns.length - shown);
   const visible = hidden ? turns.slice(hidden) : turns;
   // One more screenful of turns. After a fetched page (`paged`), that many of its turns on top of the ones that
@@ -1537,7 +1548,6 @@ export function Transcript() {
         <RunnableReplies value={true}>
           <ConversationContent data-pad className="mx-auto w-full max-w-[calc(var(--col)+80px)] gap-6 overflow-x-clip px-10 pt-8 pb-12">
             <ShowEarlier hidden={hidden} onShow={showMore} />
-            {hidden === 0 && !(meta as { earlier?: unknown }).earlier && items.map((it) => it.t === 'handoff' && it.ev.dir === 'from' && <HandoffLine key={it.key} ev={it.ev} sent={store.started} />)}
             {visible.map((t, i) => {
               const last = i === visible.length - 1;
               // The latest task title of the turns before this one, for a turn that reports only a status.
@@ -1548,9 +1558,10 @@ export function Transcript() {
               // Not while another app has the chat open (lib/held): it would only be refused again.
               const retry = last && !meta.busy && !elsewhere && !!meta.lastPrompt && t.user?.text === meta.lastPrompt.text;
               const editable = !!t.user && !editBlocked(t.user, { wall: store.wall, terminal: terminalLive && !multi, loading: meta.loading || store.cutPending, engine: meta.engine });
-              return <TurnView key={t.key} turn={t} live={live} status={live ? meta.status : ''} retry={retry} asking={live && asking} editable={editable} taskTitle={taskTitle} />;
+              const view = <TurnView key={t.key} turn={t} live={live} status={live ? meta.status : ''} retry={retry} asking={live && asking} editable={editable} taskTitle={taskTitle} />;
+              return t.before ? <Fragment key={t.key}>{t.before.map((h) => <SwitchLine key={h.key} ev={h.ev} />)}{view}</Fragment> : view;
             })}
-            {items.map((it) => it.t === 'handoff' && it.ev.dir === 'to' && <HandoffLine key={it.key} ev={it.ev} />)}
+            {tail.map((h) => <SwitchLine key={h.key} ev={h.ev} />)}
           </ConversationContent>
         </RunnableReplies>
         <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 z-10 h-5 bg-linear-to-b from-background to-transparent" />

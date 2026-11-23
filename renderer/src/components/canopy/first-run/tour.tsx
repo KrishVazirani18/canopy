@@ -12,7 +12,16 @@
 // It runs over the app itself: open the UI harness at ?mock=tour (main.tsx draws the app with this on top).
 import { useEffect, useRef, useState } from 'react';
 import { BarChart3Icon } from 'lucide-react';
+import { api } from '@/lib/api';
 import { ui } from '@/lib/ui';
+
+
+/** "Turn On Notifications": Canopy posts its first notification, which is what makes macOS ask (src/main.mjs). The
+ *  design harness has no bridge: there the browser's own permission prompt stands in. */
+function enableNotifications() {
+  if (typeof api?.enableNotifications === 'function') void api.enableNotifications().catch(() => {});
+  else void globalThis.Notification?.requestPermission?.();
+}
 
 // ---------- finding the real things ----------
 
@@ -156,7 +165,7 @@ export function TourOverlay({ onFinished, design = true }: { onFinished?: () => 
             {at > 0 && !last && <button className="h-8 whitespace-nowrap rounded-md px-2.5 text-[13px] text-muted-foreground hover:text-foreground" onClick={() => setAt((n) => n - 1)}>Back</button>}
             {!last && <button className="h-8 whitespace-nowrap rounded-md px-2.5 text-[13px] text-muted-foreground hover:text-foreground" onClick={() => setAt(STOPS.length)}>Skip</button>}
             {last && <button className="h-8 whitespace-nowrap rounded-md px-2.5 text-[13px] text-muted-foreground hover:text-foreground" onClick={() => setAt(STOPS.length)}>Not Now</button>}
-            <button className="ml-1 h-8 whitespace-nowrap rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:opacity-90" onClick={() => { if (last) void globalThis.Notification?.requestPermission?.(); setAt((n) => n + 1); }}>
+            <button className="ml-1 h-8 whitespace-nowrap rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:opacity-90" onClick={() => { if (last) enableNotifications(); setAt((n) => n + 1); }}>
               {last ? 'Turn On Notifications' : 'Next'}
             </button>
           </div>

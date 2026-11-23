@@ -10,7 +10,6 @@ import { codexModelInfo } from '../../codex-host.mjs';
 import * as M from '../../../../renderer/src/lib/model-rules.ts';
 import * as R from '../../../../renderer/src/lib/move-rules.ts';
 import { MOVE_BUSY as HOST_BUSY } from '../../../handoffs.mjs';
-import { buildDigest } from '../../handoff.mjs';
 
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'fixtures');
 function recordedOpenai() {
@@ -30,7 +29,7 @@ const ALL = M.allModels(CLAUDE, recordedOpenai());
 const chat = (meta = {}, items = []) => ({ meta: { sessionId: 'chat-1', busy: false, loading: false, ...meta }, items });
 const user = { t: 'user' };
 const ask = (type, resolved = false) => ({ t: 'permission', resolved, ev: { type } });
-const cameFrom = { t: 'handoff', ev: { dir: 'from', chat: { id: 'old-chat' }, model: 'Opus 5.5' } };
+const cameFrom = { t: 'handoff', ev: { dir: 'switch', pending: true, from: { id: 'old-chat', engine: 'claude', model: 'Opus 5.5' }, to: { id: null, engine: 'codex', model: 'GPT-6.1-Sol' } } };
 
 test('which chat a move carries: this one once it is saved, else the one it was moved from', () => {
   assert.deepEqual(R.moveSource(chat()), { id: 'chat-1', model: null, pending: false });
@@ -39,7 +38,7 @@ test('which chat a move carries: this one once it is saved, else the one it was 
   assert.deepEqual(R.moveSource(chat({ sessionId: null }, [cameFrom])), { id: 'old-chat', model: 'Opus 5.5', pending: true }, 'moved here, no message yet: the old chat moves again');
   assert.equal(R.moveSource(chat({ sessionId: null, busy: true }, [cameFrom, user])), null, 'its first message is on its way: it is becoming a chat of its own');
   assert.deepEqual(R.moveSource(chat({}, [cameFrom, user])), { id: 'chat-1', model: null, pending: false }, 'once saved, it is itself what moves');
-  assert.equal(R.moveSource(chat({ sessionId: null }, [{ t: 'handoff', ev: { dir: 'to', chat: { id: 'x' } } }])), null, 'a "Continued in" line is not where a chat came from');
+  assert.equal(R.moveSource(chat({ sessionId: null }, [{ t: 'handoff', ev: { dir: 'switch', from: { id: 'x', engine: 'claude' }, to: { id: 'y', engine: 'codex' } } }])), null, 'a switch the chat has carried on past is not a pending move');
   assert.equal(R.moveSource(null), null);
 });
 
@@ -115,24 +114,12 @@ test('the words', () => {
   assert.equal(R.otherEngine('codex'), 'claude');
 });
 
-test('the line over what was carried, and its size', () => {
-  assert.equal(R.tokensLabel(3100), 'about 3.1k tokens');
-  assert.equal(R.tokensLabel(4000), 'about 4k tokens');
-  assert.equal(R.tokensLabel(240), 'about 240 tokens');
-  assert.equal(R.tokensLabel(1), 'about 1 token');
-  assert.equal(R.tokensLabel(undefined), 'about 0 tokens');
-  assert.equal(R.carriedLine('GPT-6.1-Sol', 3100, false), 'GPT-6.1-Sol gets this with your first message, about 3.1k tokens.');
-  assert.equal(R.carriedLine('GPT-6.1-Sol', 3100, true), 'GPT-6.1-Sol got this with your first message, about 3.1k tokens.');
-});
-
-test('the digest is shown without the tags that mark it for the model', () => {
-  const digest = buildDigest([{ kind: 'user-text', text: 'Rename the helper' }, { kind: 'assistant-text', text: 'Renamed.' }], { fromModel: 'Opus 5.5' }).text;
-  const shown = R.shownDigest(digest);
-  assert.ok(shown.startsWith('This chat continues an earlier one that ran on Opus 5.5.'));
-  assert.ok(shown.endsWith('Renamed.'));
-  assert.doesNotMatch(shown, /canopy_handoff/);
-  assert.equal(R.shownDigest(null), '');
-  // Plain lines stay lines; list items, headings and blank lines are markdown's own.
-  assert.equal(R.shownDigest('<canopy_handoff>\n## Plan and to-dos\n[x] one\n[ ] two\n\n## Files changed\n- a.ts (+1 -0)\n- b.ts (+2 -1)\n\n## State\nFolder: /x.\nMode: Ask.\n</canopy_handoff>'),
-    '## Plan and to-dos\n[x] one  \n[ ] two\n\n## Files changed\n- a.ts (+1 -0)\n- b.ts (+2 -1)\n\n## State\nFolder: /x.  \nMode: Ask.');
+test('backTarget: the session the other maker already has in this chat\'s thread', () => {
+  const sw = (from, to, extra = {}) => ({ t: 'handoff', ev: { dir: 'switch', from, to, ...extra } });
+  const A = { id: 'claude-a', engine: 'claude', model: 'Opus 5.5' }, B = { id: 'codex-b', engine: 'codex', model: 'GPT-6.1-Sol' };
+  assert.equal(R.backTarget(chat({}, [user]), 'codex'), null, 'never moved: a move starts a new session');
+  assert.equal(R.backTarget(chat({ sessionId: 'codex-b' }, [user, sw(A, B), user]), 'claude'), 'claude-a', 'on Codex, back to Claude');
+  assert.equal(R.backTarget(chat({ sessionId: 'claude-a' }, [sw(A, B), sw(B, A)]), 'codex'), 'codex-b', 'and over again');
+  assert.equal(R.backTarget(chat({ sessionId: null }, [sw(A, { id: null, engine: 'codex' }, { pending: true })]), 'codex'), null, 'a session with no id yet is nowhere to go back to');
+  assert.equal(R.backTarget(null, 'codex'), null);
 });

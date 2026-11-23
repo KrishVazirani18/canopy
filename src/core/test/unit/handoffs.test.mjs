@@ -8,10 +8,10 @@ import path from 'node:path';
 import { after, afterEach, test } from 'node:test';
 import { createFakeCodex } from '../fake-codex.mjs';
 import { sleep } from '../helpers.mjs';
-import { Handoffs, HANDOFF_FOLDERS_MAX, MOVE_BUSY, MOVE_EMPTY, MOVE_FAILED, sessionTitle } from '../../../handoffs.mjs';
+import { Handoffs, HANDOFF_FOLDERS_MAX, MOVE_BUSY, MOVE_EMPTY, MOVE_FAILED, readThreadCursor, sessionTitle, threadCursor } from '../../../handoffs.mjs';
 import { ChatHost } from '../../../chats.mjs';
 import { CodexSession } from '../../codex-session.mjs';
-import { HANDOFF_OPEN, forClaude, isHandoffText, tokensOf } from '../../handoff.mjs';
+import { HANDOFF_OPEN, forClaude, isHandoffText } from '../../handoff.mjs';
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'canopy-unit-handoffs-')));
 const work = path.join(root, 'work');
@@ -160,60 +160,108 @@ test('a chat let go before its first message takes its pending record with it', 
   assert.deepEqual(h.sessionOpts({ handoffKey: r.key }), {});
 });
 
-test('notes: "from" first and "to" last, before the first message and after a reload', async () => {
-  const { h, dir, state } = make();
+// Each session's own events, as main's ownHistory gives them: the thread is put together from these.
+function sessions(byId) { return { with: { historyOf: async (id) => byId[id] ?? [] } }; }
+const T0 = 1794800001000; // the clock's first tick in make(): when the first move is prepared
+const LATER = [{ kind: 'user-text', text: 'carry on', at: T0 + 500 }, { kind: 'assistant-text', text: 'OK', at: T0 + 600 }];
+
+test('notes: a moved chat is one thread, with the switch where the maker changed, before and after its first message', async () => {
+  const byId = { [OLD]: HISTORY };
+  const { h, state, dir } = make(sessions(byId));
   const r = await h.prepare(MOVE, about());
   h.bind(r.key, 'sid-1');
-  const file = path.join(dir, r.key, 'transcript.md');
 
-  // Before the first message the new chat has no id: its line comes by the open chat's own id, again and again.
+  // Before the first message the new chat has no id: the old chat's thread, with the switch at the end, pending.
   for (let i = 0; i < 2; i++) {
     const before = await h.notes({ sessionId: null, sid: 'sid-1' }, []);
-    assert.equal(before.length, 1);
-    const from = before[0];
-    assert.deepEqual([from.kind, from.dir, from.model, from.toModel, from.file, from.at], ['handoff', 'from', 'Opus 5.5', 'GPT-6.1-Sol', file, 1794800001000]);
-    assert.deepEqual(from.chat, { id: OLD, title: 'Rename the helper', cwd: work, engine: 'claude' });
-    assert.ok(isHandoffText(from.digest));
-    assert.equal(from.tokens, tokensOf(from.digest));
+    assert.deepEqual(before.slice(0, -1), HISTORY);
+    assert.deepEqual(before.at(-1), {
+      kind: 'handoff', dir: 'switch', at: T0, pending: true,
+      from: { id: OLD, engine: 'claude', model: 'Opus 5.5' }, to: { id: null, engine: 'codex', model: 'GPT-6.1-Sol' },
+    });
   }
-  assert.deepEqual(await h.notes({ sessionId: OLD }, HISTORY), HISTORY, 'the old chat says nothing until the new one has a message');
-  assert.deepEqual(await h.notes({ sessionId: null, sid: 'another' }, []), [], 'a new chat that is not a move has no line');
+  assert.deepEqual(await h.notes({ sessionId: OLD }, HISTORY), HISTORY, 'the old chat is itself until the new one has a message');
+  assert.deepEqual(await h.notes({ sessionId: null, sid: 'another' }, []), [], 'a new chat that is not a move has nothing');
+  assert.equal(h.thread(OLD), null);
+  assert.deepEqual([...h.hidden()], []);
 
   h.onEvent({ kind: 'init', sid: 'sid-1', sessionId: NEW }, { engine: 'codex' });
-  const turn = [{ kind: 'user-text', text: 'carry on' }, { kind: 'assistant-text', text: 'OK' }];
-  const after = await h.notes({ sessionId: NEW, sid: 'sid-1' }, turn);
-  assert.deepEqual(after.map((e) => e.kind), ['handoff', 'user-text', 'assistant-text']);
-  assert.equal(after[0].dir, 'from');
+  byId[NEW] = LATER;
+  const after = await h.notes({ sessionId: NEW, sid: 'sid-1' }, LATER);
+  assert.deepEqual(after.map((e) => e.dir ?? e.text ?? e.kind), [...HISTORY.map((e) => e.text ?? e.kind), 'switch', 'carry on', 'OK']);
+  const sw = after[HISTORY.length];
+  assert.deepEqual([sw.from.id, sw.to.id, sw.to.engine, sw.pending], [OLD, NEW, 'codex', undefined]);
+  assert.deepEqual(await h.notes({ sessionId: OLD }, HISTORY), after, 'opened by either session, the thread is the same');
+  assert.equal(h.thread(OLD).head, NEW);
+  assert.deepEqual([...h.hidden()], [OLD], 'the sidebar lists the chat once, by the session it runs on now');
 
-  const old = await h.notes({ sessionId: OLD }, HISTORY);
-  assert.equal(old.length, HISTORY.length + 1);
-  assert.deepEqual(old.at(-1), { kind: 'handoff', dir: 'to', chat: { id: NEW, title: 'Rename the helper', cwd: work, engine: 'codex' }, model: 'GPT-6.1-Sol', at: 1794800001000 });
-  assert.deepEqual(old.slice(0, -1), HISTORY);
-
-  // A new Handoffs over the same saved links and folder (the app restarted): the digest is read back from its file.
-  const again = new Handoffs({ load: () => state.links, save: () => {}, dir });
-  const reread = await again.notes({ sessionId: NEW }, turn);
-  assert.equal(reread[0].digest, after[0].digest);
-  assert.equal(reread[0].file, file);
-  // Its files cleared away since: the line is still there, with nothing to open.
-  fs.rmSync(path.join(dir, r.key), { recursive: true });
-  const bare = await new Handoffs({ load: () => state.links, save: () => {}, dir }).notes({ sessionId: NEW }, turn);
-  assert.deepEqual([bare[0].dir, bare[0].digest, bare[0].file, bare[0].tokens], ['from', '', null, state.links[NEW].tokens]);
+  // The app restarted: the same saved links make the same thread.
+  const again = new Handoffs({ load: () => state.links, save: () => {}, dir, historyOf: async (id) => byId[id] ?? [] });
+  assert.deepEqual(await again.notes({ sessionId: NEW }, LATER), after);
 });
 
-test('a chat moved on twice has two "Continued in" lines, oldest first; a chat can be both moved into and moved on', async () => {
-  const { h } = make();
-  const a = await h.prepare(MOVE, about());
-  h.bind(a.key, 'sid-a'); h.onEvent({ kind: 'init', sid: 'sid-a', sessionId: 'chat-b' }, {});
-  const b = await h.prepare({ ...MOVE, toModel: 'GPT-6.1-Astra' }, about());
-  h.bind(b.key, 'sid-b'); h.onEvent({ kind: 'init', sid: 'sid-b', sessionId: 'chat-c' }, {});
-  const c = await h.prepare({ from: 'chat-b', fromModel: 'GPT-6.1-Sol', toModel: 'Fable 5.2' }, about({ toEngine: 'claude' }));
-  h.bind(c.key, 'sid-c'); h.onEvent({ kind: 'init', sid: 'sid-c', sessionId: 'chat-d' }, {});
-  const old = await h.notes({ sessionId: OLD }, []);
-  assert.deepEqual(old.map((e) => [e.dir, e.chat.id, e.model]), [['to', 'chat-b', 'GPT-6.1-Sol'], ['to', 'chat-c', 'GPT-6.1-Astra']]);
-  const middle = await h.notes({ sessionId: 'chat-b' }, [{ kind: 'user-text', text: 'x' }]);
-  assert.deepEqual(middle.map((e) => e.dir ?? e.kind), ['from', 'user-text', 'to']);
-  assert.equal(middle.at(-1).chat.engine, 'claude');
+test('going back to the session the other maker already has: it is told what happened, and the thread goes on there', async () => {
+  const byId = { [OLD]: HISTORY };
+  const { h, state } = make(sessions(byId));
+  const r = await h.prepare(MOVE, about());
+  h.bind(r.key, 'sid-1'); h.onEvent({ kind: 'init', sid: 'sid-1', sessionId: NEW }, { engine: 'codex' });
+  byId[NEW] = LATER;
+
+  assert.deepEqual(await h.back({ from: NEW, to: OLD, fromModel: 'GPT-6.1-Sol', toModel: 'Opus 5.5' }, about({ busy: true })), { ok: false, message: MOVE_BUSY });
+  const b = await h.back({ from: NEW, to: OLD, fromModel: 'GPT-6.1-Sol', toModel: 'Opus 5.5' }, about());
+  assert.equal(b.ok, true);
+  assert.ok(isHandoffText(b.text));
+  assert.match(b.text, /While this chat was away from you, the user carried it on with GPT-6\.1-Sol/);
+  assert.match(b.text, /carry on/, 'what was asked there');
+  assert.doesNotMatch(b.text, /Rename the helper and update/, 'not what the session gone back to already knows');
+  assert.equal(h.thread(NEW).head, OLD);
+  assert.deepEqual([...h.hidden()], [NEW]);
+  const backAt = Object.values(state.links).find((l) => l.back).at;
+
+  // Claude carries on: its own session now holds its first part and what came after the switch back.
+  byId[OLD] = [...HISTORY, { kind: 'user-text', text: 'and the tests', at: backAt + 10 }];
+  const all = await h.notes({ sessionId: OLD }, byId[OLD]);
+  assert.deepEqual(all.map((e) => (e.dir ? `${e.from.engine}>${e.to.engine}` : e.text ?? e.kind)),
+    [...HISTORY.map((e) => e.text ?? e.kind), 'claude>codex', 'carry on', 'OK', 'codex>claude', 'and the tests']);
+
+  // Back to Codex: told what happened on Claude since.
+  const c = await h.back({ from: OLD, to: NEW, fromModel: 'Opus 5.5', toModel: 'GPT-6.1-Sol' }, about());
+  assert.match(c.text, /and the tests/);
+  assert.doesNotMatch(c.text, /carry on/);
+  assert.equal(h.thread(OLD).head, NEW);
+});
+
+test('going straight back from a session nothing was said in takes the switch back', async () => {
+  const byId = { [OLD]: HISTORY };
+  const { h, state } = make(sessions(byId));
+  const r = await h.prepare(MOVE, about());
+  h.bind(r.key, 'sid-1'); h.onEvent({ kind: 'init', sid: 'sid-1', sessionId: NEW }, { engine: 'codex' });
+  byId[NEW] = LATER;
+  await h.back({ from: NEW, to: OLD, fromModel: 'GPT-6.1-Sol', toModel: 'Opus 5.5' }, about());
+  assert.equal(Object.keys(state.links).length, 2);
+  // Nothing said on Claude since: back to Codex removes the switch instead of stacking another.
+  assert.deepEqual(await h.back({ from: OLD, to: NEW, fromModel: 'Opus 5.5', toModel: 'GPT-6.1-Sol' }, about()), { ok: true, text: null });
+  assert.deepEqual(Object.keys(state.links), [NEW]);
+  assert.equal(h.thread(OLD).head, NEW);
+  // A session not in the thread, or the same one, is no move back.
+  assert.deepEqual(await h.back({ from: NEW, to: 'elsewhere' }, about()), { ok: false, message: MOVE_FAILED });
+  assert.deepEqual(await h.back({ from: NEW, to: NEW }, about()), { ok: true, text: null });
+});
+
+test('a long chat read from its newest turns pages through its thread', async () => {
+  const byId = { [OLD]: HISTORY };
+  const { h } = make(sessions(byId));
+  const r = await h.prepare(MOVE, about());
+  h.bind(r.key, 'sid-1'); h.onEvent({ kind: 'init', sid: 'sid-1', sessionId: NEW }, { engine: 'codex' });
+  const newest = [{ kind: 'earlier', cursor: 'c1', history: true }, { kind: 'user-text', text: 'latest', at: T0 + 9000 }];
+  const first = await h.notes({ sessionId: NEW }, newest);
+  assert.deepEqual(first.map((e) => e.kind), ['earlier', 'user-text'], 'the old chat and the switch wait for the last page');
+  const c = readThreadCursor(first[0].cursor);
+  assert.deepEqual(c, { hi: T0 + 9000, cursor: 'c1' });
+  assert.equal(threadCursor(c.hi, c.cursor), first[0].cursor);
+  const last = await h.notes({ sessionId: NEW, hi: c.hi }, LATER);
+  assert.deepEqual(last.map((e) => e.dir ?? e.text ?? e.kind), [...HISTORY.map((e) => e.text ?? e.kind), 'switch', 'carry on', 'OK']);
+  assert.equal(readThreadCursor('c1'), null);
 });
 
 test('moving the same old chat again from a chat that never started replaces the pending move', async () => {
@@ -224,11 +272,11 @@ test('moving the same old chat again from a chat that never started replaces the
   assert.notEqual(a.key, b.key);
   h.bind(b.key, 'sid-1'); // the same screen, a chat of the other maker
   assert.deepEqual(h.sessionOpts({ handoffKey: a.key }), {}, 'the move it replaced is forgotten');
-  const line = await h.notes({ sessionId: null, sid: 'sid-1' }, []);
-  assert.equal(line[0].toModel, 'Fable 5.2');
+  const line = (await h.notes({ sessionId: null, sid: 'sid-1' }, [])).at(-1);
+  assert.equal(line.to.model, 'Fable 5.2');
 });
 
-test('a conversation that starts over under a new id keeps its link', async () => {
+test('a conversation that starts over under a new id keeps its place in the thread', async () => {
   const { h, state } = make();
   const r = await h.prepare(MOVE, about({ toEngine: 'claude' }));
   h.bind(r.key, 'sid-1'); h.onEvent({ kind: 'init', sid: 'sid-1', sessionId: 'first-id' }, { engine: 'claude' });
@@ -238,7 +286,10 @@ test('a conversation that starts over under a new id keeps its link', async () =
   // Editing its first message replaces it.
   h.onEvent({ kind: 'meta', sid: 'sid-1', sessionId: 'second-id', previousSessionId: 'first-id', supersedes: 'first-id' }, { engine: 'claude' });
   assert.deepEqual(Object.keys(state.links), ['second-id']);
-  assert.equal((await h.notes({ sessionId: OLD }, [])).at(-1).chat.id, 'second-id');
+  assert.equal(h.thread(OLD).head, 'second-id');
+  // So does the chat it came from, should its conversation start over.
+  h.onEvent({ kind: 'meta', sid: 'sid-0', sessionId: 'old-2', previousSessionId: OLD, supersedes: OLD }, { engine: 'claude' });
+  assert.deepEqual([...h.thread('second-id').ids].sort(), ['old-2', 'second-id']);
 });
 
 test('the newest 200 folders are kept, and never one a chat is still waiting to use', async () => {
@@ -297,7 +348,7 @@ afterEach(async () => {
   assert.equal(fakes.splice(0).flatMap((f) => f.alive()).length, 0, 'every process a chat started is gone');
 });
 
-test('a Claude chat moved to OpenAI: one open, the digest ahead of the first turn, the link, the name, both lines', async () => {
+test('a Claude chat moved to OpenAI: one open, the digest ahead of the first turn, the link, the name, one thread', async () => {
   const fake = createFakeCodex();
   fakes.push(fake);
   fake.handlers['thread/inject_items'] = () => ({});
@@ -318,7 +369,7 @@ test('a Claude chat moved to OpenAI: one open, the digest ahead of the first tur
   h.bind(moved.key, r.sid);
   assert.equal(r.session.sessionId, null, 'nothing is sent, and nothing is saved, until the first message');
   assert.equal(fake.received.length, 0, 'the move itself starts no process and calls no model');
-  assert.equal((await h.notes({ sessionId: null, sid: r.sid }, []))[0].dir, 'from');
+  assert.equal((await h.notes({ sessionId: null, sid: r.sid }, [])).at(-1).pending, true);
 
   r.session.send('carry on with the callers');
   for (let i = 0; i < 600 && !(state.links && !r.session.busy); i++) await sleep(5);
@@ -331,16 +382,16 @@ test('a Claude chat moved to OpenAI: one open, the digest ahead of the first tur
   assert.deepEqual(calls[2].params.input.filter((i) => i.type === 'text').map((i) => i.text), ['carry on with the callers']);
   await sleep(5);
   assert.deepEqual(state.renames.map(([chat, title]) => [chat.id, chat.engine, title]), [[id, 'codex', 'Rename the helper']]);
-  assert.equal((await h.notes({ sessionId: OLD }, [])).at(-1).chat.id, id);
+  assert.equal(h.thread(OLD).head, id);
 });
 
-test('the chat that was moved on from is told so with its next message, if you go back to it', async () => {
+test('the chat that was moved on from, gone back to, is told what happened there with its next message, once', async () => {
   const fake = createFakeCodex({ known: [OLD] });
   fakes.push(fake);
   fake.handlers['thread/inject_items'] = () => ({});
   let host;
   // Wired the way src/main.mjs wires it: the old chat, if it is still open, gets a note.
-  const { h } = make({ with: { onMoved: (rec) => { host.note(host.manager.find({ sessionId: rec.from.id })?.sid, { kind: 'moved', model: rec.to.model }); } } });
+  const { h } = make({ with: { historyOf: async (id) => (id === OLD ? HISTORY : LATER), onMoved: (rec) => { host.note(host.manager.find({ sessionId: rec.from.id })?.sid, { kind: 'moved', model: rec.to.model }); } } });
   host = new ChatHost({
     create: (o) => new CodexSession({ cwd: o.cwd, resume: o.resume, codexPath: '/fake/codex', env: { PATH: '/usr/bin:/bin', HOME: root }, spawnFn: fake.spawnFn, ...h.sessionOpts(o), timeouts: { restart: 15 } }),
     send: () => {}, notify: () => {}, badge: () => {}, isFocused: () => true, isOnScreen: () => true, onEvent: (ev, entry) => h.onEvent(ev, entry), onStatus: () => {},
@@ -358,14 +409,18 @@ test('the chat that was moved on from is told so with its next message, if you g
   assert.equal(old.session.notes.size, 1);
   assert.equal(next.session.notes.size, 0, 'the new chat has the digest; it is not told about itself');
 
-  // You go back to the old chat.
+  // You go back to the old chat (main: session:open with `back`): it is told what happened in the new one, once.
+  const b = await h.back({ from: next.session.sessionId, to: OLD, fromModel: 'GPT-6.1-Sol', toModel: 'Opus 5.5' }, about());
+  assert.ok(old.session.handBack(b.text));
   old.session.send('how did that go?');
   for (let i = 0; i < 600 && old.session.busy; i++) await sleep(5);
-  const told = fake.received.filter((m) => m.method === 'thread/inject_items' && m.params.threadId === OLD);
-  assert.deepEqual(told.map((m) => m.params.items[0].content[0].text), ['<canopy_note>\nThe user carried this conversation on in another chat (GPT-6.1-Sol). Work may have been done there since your last reply here: check the files before relying on what you remember of them.\n</canopy_note>']);
+  const told = fake.received.filter((m) => m.method === 'thread/inject_items' && m.params.threadId === OLD).map((m) => m.params.items[0].content[0].text);
+  assert.equal(told.length, 2);
+  assert.ok(told.some((t) => isHandoffText(t) && /carry on/.test(t)), 'what happened while it was away');
+  assert.ok(told.some((t) => t.startsWith('<canopy_note>\nThe user carried this conversation on in another chat (GPT-6.1-Sol).')));
   old.session.send('thanks');
   for (let i = 0; i < 600 && old.session.busy; i++) await sleep(5);
-  assert.equal(fake.received.filter((m) => m.method === 'thread/inject_items' && m.params.threadId === OLD).length, 1, 'once');
+  assert.equal(fake.received.filter((m) => m.method === 'thread/inject_items' && m.params.threadId === OLD).length, 2, 'once');
 });
 
 test('a move from a chat that is no longer open tells nobody, and nothing throws', async () => {

@@ -414,7 +414,9 @@ function headAndState(chat, about) {
   const a = isObj(about) ? about : {};
   const model = oneLine(a.fromModel) || 'another model';
   const file = str(a.file);
-  const head = `This chat continues an earlier one that ran on ${defuse(model)}. What follows is Canopy's record of that chat, put together without a model. Nobody said it to you. Trust the files on disk over this record.`
+  const head = (a.back
+    ? `While this chat was away from you, the user carried it on with ${defuse(model)}, and now it is back with you. What follows is Canopy's record of what happened there, put together without a model. Nobody said it to you. Trust the files on disk over this record.`
+    : `This chat continues an earlier one that ran on ${defuse(model)}. What follows is Canopy's record of that chat, put together without a model. Nobody said it to you. Trust the files on disk over this record.`)
     + (file ? ` The full transcript is at ${defuse(file)}: open or search it when you need a detail that is not here.` : '');
   const changed = statusLines(a.status);
   const state = (shown) => {
@@ -452,8 +454,9 @@ const SQUEEZES = [
 /**
  * The digest of a chat, for the model that carries it on.
  * @param {object[]} events the old chat's Canopy events, oldest first
- * @param {{ fromModel?: string, cwd?: string, file?: string, mode?: string, branch?: string | null, status?: string | string[] | null }} about
- *   `fromModel`: the old model's name on screen. `file`: where the full transcript is. `status`: `git status
+ * @param {{ fromModel?: string, cwd?: string, file?: string, mode?: string, branch?: string | null, status?: string | string[] | null, back?: boolean }} about
+ *   `fromModel`: the old model's name on screen. `back`: the record is for a chat gone back to, of what happened
+ *   while it was away. `file`: where the full transcript is. `status`: `git status
  *   --porcelain` of the folder (null or left out: not a repo, so nothing is said about it).
  * @param {{ redact?: (s: string) => string }} [opts]
  * @returns {{ text: string, tokens: number, counts: { requests: number, files: number, commands: number } }}

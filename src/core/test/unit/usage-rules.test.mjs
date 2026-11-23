@@ -146,3 +146,25 @@ test('near a limit: one plain line, and a button that names what it switches to'
   assert.deepEqual(R.switchedText({ id: 'c', label: 'Console' }), { title: 'New chats use Console', description: 'Open chats stay on the account they started on.' });
   assert.equal(R.switchedText({ id: 'k', label: 'API key ••••4f2a' }).title, 'New chats use your API key');
 });
+
+test('Home’s today: a plan reads as how full it is, never dollars; only per-use accounts read in dollars', () => {
+  const week = { key: 'seven_day', label: 'This week', percent: 34, resetsAt: null };
+  const session = { key: 'five_hour', label: 'Current session', percent: 61, resetsAt: null };
+  const key = acct({ id: 'codex-key', engine: 'codex', kind: 'key' });
+  const spend = (today) => section({ engine: 'codex', account: key, shape: 'spend', windows: undefined, count: { unit: 'usd', today, month: today, since: null, chat: null } });
+
+  const plan = R.dayUse([section({ windows: [session, week] })]);
+  assert.deepEqual(plan, { plans: [{ engine: 'claude', percent: 34, what: 'this week’s limit' }], spend: null, dollars: false }, 'the week, even when the session comes first');
+  assert.equal(R.planText(plan.plans), 'Claude is at 34% of this week’s limit');
+  assert.equal(R.dayUse([section({ windows: [session] })]).plans[0].what, 'this session’s limit', 'no week: the window there is');
+
+  const codexWeek = { key: 'secondary', label: 'This week', percent: 12, resetsAt: null };
+  const both = R.dayUse([section({ windows: [week] }), section({ engine: 'codex', account: acct({ engine: 'codex' }), windows: [codexWeek] })]);
+  assert.equal(R.planText(both.plans), 'Claude is at 34% of this week’s limit and Codex at 12% of this week’s limit');
+
+  assert.deepEqual(R.dayUse([section({ windows: [week] }), spend(4.1)]), { plans: [{ engine: 'claude', percent: 34, what: 'this week’s limit' }], spend: 4.1, dollars: false }, 'mixed: dollars only for what was billed per use');
+  assert.equal(R.dayUse([spend(4.1)]).dollars, true, 'every account billed per use: the day’s cost is the bill');
+  assert.deepEqual(R.dayUse(null), { plans: [], spend: null, dollars: false }, 'nothing known yet: say neither');
+  assert.deepEqual(R.dayUse([section({ windows: [] })]), { plans: [], spend: null, dollars: false }, 'a plan whose limits could not be read: no percent, and still no dollars');
+  assert.equal(R.dayUse([section({ shape: 'attention' })]).dollars, false);
+});

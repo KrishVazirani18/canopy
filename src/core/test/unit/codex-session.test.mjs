@@ -502,8 +502,9 @@ test('every thread is told the facts about Canopy, after the user\'s own develop
     '- The user may run several chats at once. If a message seems meant for another chat, ask.',
     '- For unrelated work, you can suggest starting a new chat.',
     '- A shell command in a ```bash block of yours has a Run button: the user can run it in a terminal inside Canopy, in this folder, and what it prints comes back to you. When a step needs a terminal you can\'t use (a sign-in that opens the browser, a command that asks questions), give it that way and say to click Run, instead of asking them to open the Terminal app.',
+    '- For inline visuals in Canopy, use mcp__canopy__read_me and mcp__canopy__show_widget when available. The bundled Codex Visualize skill targets a different renderer. Link to saved files with Markdown.',
   ].join('\n'));
-  assert.equal(CANOPY_FACTS_NEUTRAL.split('\n').slice(1).join('\n'), CANOPY_FACTS.split('\n').slice(1).join('\n'), 'only the first line differs from a Claude chat\'s');
+  assert.equal(CANOPY_FACTS_NEUTRAL.split('\n').slice(1, -1).join('\n'), CANOPY_FACTS.split('\n').slice(1).join('\n'), 'shared facts match a Claude chat\'s');
 
   // A new chat and a reopened one say the same thing.
   const fresh = make();

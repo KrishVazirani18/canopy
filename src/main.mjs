@@ -56,7 +56,7 @@ import { MemoryStore } from './core/memory-store.mjs';
 import { CodexListed } from './codex-listed.mjs';
 import { CODEX_MIN_VERSION, CODEX_TOO_OLD, CODEX_UPDATES_OFF, codexTooOld, codexUpdatesOff, restartIdleCodex, updateCodex } from './core/codex-upkeep.mjs';
 import { redact, makeRedactor } from './core/redact.mjs';
-import { Handoffs, UNTITLED, sessionTitle } from './handoffs.mjs';
+import { Handoffs, UNTITLED, readThreadCursor, sessionTitle } from './handoffs.mjs';
 import { lastActive, lastPrompt, lastReply } from './last-active.mjs';
 import { chatTotals } from './chat-totals.mjs';
 import { chatCost } from './chat-cost.mjs';
@@ -653,7 +653,7 @@ const engineToOpen = (resume, opts) => engineFor({ resume, engine: opts?.engine,
 const handoffs = new Handoffs({
   load: () => loadState().handoffs, save: (links) => saveState({ handoffs: links }),
   dir: () => path.join(app.getPath('userData'), 'handoffs'),
-  historyOf: (id, cwd) => historyOf(id, cwd),
+  historyOf: (id, cwd) => ownHistory(id, cwd), // one session's own events: the thread is put together in handoffs.mjs
   chatOf: async (id, cwd) => {
     if (codexChats.has(id)) return { engine: 'codex', title: codexChats.titleOf(id) ?? '' };
     const title = sessionTitle(await getSessionInfo(id, cwd ? { dir: cwd } : undefined).catch(() => null));
@@ -685,6 +685,18 @@ async function startMove(cwd, resume, opts) {
   const old = typeof move.from === 'string' ? liveChat(move.from) : null;
   const r = await handoffs.prepare(move, { cwd, busy: !movable(old), mode: old?.mode ?? old?.settings?.permissionMode ?? null, toEngine: engineToOpen(null, opts) });
   return r.ok ? { key: r.key } : { error: r.message };
+}
+/**
+ * `opts.back` on a saved chat's open: { from, fromModel, toModel }, the switch back to `resume`, the session the other
+ * maker already has in this chat's thread (handoffs.back()). { text } for that session to carry with its next message
+ * (null: nothing to tell), { error } when refused, or null when this open is not a switch back.
+ */
+async function startBack(cwd, resume, opts) {
+  const back = resume && opts?.back && typeof opts.back === 'object' ? opts.back : null;
+  if (!back) return null;
+  const old = typeof back.from === 'string' ? chats?.manager.find({ sessionId: back.from })?.session ?? null : null;
+  const r = await handoffs.back({ ...back, to: resume }, { cwd, busy: !movable(old), mode: old?.mode ?? old?.settings?.permissionMode ?? null });
+  return r.ok ? { text: r.text } : { error: r.message };
 }
 // ---------- Models, and conversations an edit replaced ----------
 // Claude's model rows as its chats last reported them, kept across restarts: a Codex chat never reports them, and the
@@ -977,7 +989,7 @@ async function openSession(cwd, resume, opts) {
   closeTerm();
   hostPrefs = await readUserPrefs(envInfo?.env);
   const engine = engineToOpen(resume, opts);
-  const r = await chatHost().open(cwd, resume, { ...(engine === 'codex' && { engine }), ...(opts?.handoffKey && { handoffKey: opts.handoffKey }) });
+  const r = await chatHost().open(cwd, resume, { ...(engine === 'codex' && { engine }), ...(opts?.handoffKey && { handoffKey: opts.handoffKey }), ...(opts?.handBack && { handBack: opts.handBack }) });
   if (!r.reused) engineEvents.onOpen({ sid: r.sid, kind: resume ? 'resumed' : 'new' });
   nameOpened(resume, engine, cwd);
   current = r.session;
@@ -998,7 +1010,9 @@ async function openChecks(cwd, resume, opts) {
   const tooOld = codexGate(resume, opts); if (tooOld) return tooOld;
   const moved = await startMove(cwd, resume, opts);
   if (moved?.error) return moved; // refused (the old chat is working): nothing was opened, the old chat stays as it is
-  return { moved };
+  const back = await startBack(cwd, resume, opts);
+  if (back?.error) return back;
+  return { moved, back };
 }
 /** What an open answers the window with, for the chat `r` that was opened or found still live. `heldAsk` is the
  *  question "is this Codex chat open in another app?", already on its way (heldCheck). */
@@ -1048,6 +1062,29 @@ handle('app:init', async () => {
 });
 
 handle('app:recheck', async () => { await ensureEnv(true); upkeep?.ensureModels(); return publicEnv(); });
+// "Turn On Notifications" (the tour's last step). A web page's Notification.requestPermission can't do it: the window
+// turns down every web permission, and macOS asks only when the app itself first posts a notification. So Canopy
+// posts one, which brings up macOS's "Canopy would like to send notifications" the first time. When macOS has
+// already been told no, the post fails: then System Settings opens at Notifications, where it can be turned on.
+const NOTIFICATION_SETTINGS = 'x-apple.systempreferences:com.apple.Notifications-Settings.extension';
+handle('notifications:enable', () => new Promise((resolve) => {
+  try {
+    if (!Notification.isSupported()) { resolve({ error: 'Notifications aren’t available on this Mac.' }); return; }
+    const n = new Notification({ title: 'Notifications are on', body: 'Canopy will tell you when a chat finishes or needs you.' });
+    let settled = false;
+    const done = (r) => { if (!settled) { settled = true; resolve(r); } };
+    n.on('show', () => done({ ok: true }));
+    n.on('failed', (_e, err) => {
+      log(`notifications: macOS refused (${err})`);
+      void shell.openExternal(NOTIFICATION_SETTINGS);
+      done({ error: 'denied', settings: true });
+    });
+    n.show();
+    // macOS may hold the first one while it asks: the answer comes later, and nothing here needs to wait for it.
+    setTimeout(() => done({ ok: true, pending: true }), 4000);
+  } catch (err) { log(`notifications: ${err?.message ?? err}`); resolve({ error: String(err?.message ?? err) }); }
+}));
+
 // Onboarding's "Setting Things Up": installs a tool the environment check didn't find, with its maker's own installer
 // (src/installers.mjs), then checks again so everything that waits on it sees it. Only for a tool that is missing.
 let installing = null;
@@ -1401,7 +1438,9 @@ handle('sessions:list', async (cwd) => {
   // Codex chats, from Canopy's own lists (the ones started here, and the ones Codex lists from its app and the terminal):
   // no process is asked, so they add nothing to the wait. A Codex chat with no project is listed under Chats.
   const codex = codexChats.rows(dirs, { chatsDir: await chatsDir() }).map((r) => (r.named === false ? r : { ...r, title: titleCase(r.title) }));
-  return [...claude, ...codex];
+  // A chat moved between makers is one row: the session it runs on now (src/handoffs.mjs).
+  const inThread = handoffs.hidden();
+  return [...claude, ...codex].filter((r) => !inThread.has(r.id));
 });
 
 // Projects: the folders the user opened, in their own order (state.json `projects`).
@@ -1547,13 +1586,14 @@ handle('files:list', async (cwd) => listFiles(cwd, envInfo?.env ?? process.env))
 handle('session:open', async (cwd, resume, opts) => {
   const checked = await openChecks(cwd, resume, opts);
   if (checked.error) return checked;
-  const { moved } = checked;
+  const { moved, back } = checked;
   const before = opts?.replaceEmpty === true ? chats?.activeSid ?? null : null;
   const heldAsk = heldCheck(resume);
   // Remember exactly what's open (including "new, not sent yet") so a restart reopens it.
   saveState({ lastFolder: cwd, lastSession: resume || null, lastEngine: engineToOpen(resume, opts) });
-  const r = await openSession(cwd, resume, moved ? { ...opts, handoffKey: moved.key } : opts);
+  const r = await openSession(cwd, resume, moved ? { ...opts, handoffKey: moved.key } : back?.text ? { ...opts, handBack: back.text } : opts);
   if (moved) handoffs.bind(moved.key, r.sid);
+  if (back?.text && r.reused) r.session.handBack?.(back.text); // still open: told now, as a new session would be
   if (before && before !== r.sid) chats.discardIfUntouched(before);
   return openedReply(r, { cwd, resume, defaults: { mode: hostPrefs.defaultMode ?? 'default' }, heldAsk });
 });
@@ -1572,10 +1612,14 @@ handle('codex:held', async () => codexHeld.all());
 // A chat's waiting messages, for the snapshot the window redraws from.
 const queueSnap = (sid) => { const q = chats?.queueOf(sid) ?? { queue: [], v: 0 }; return { queue: q.queue, queueV: q.v }; };
 const paneChat = (sid) => (typeof sid === 'string' ? chats?.manager.get(sid) ?? null : null);
-// What a chat opens with, as events, for either engine: its saved transcript, the notes a restart left in it, and its
-// "Continued from / Continued in" lines (`sid`: the open chat, for one that was moved here and has no id yet, so its
-// line is there before its first message). Never throws: a failure is one notice in the list.
+// What a chat opens with, as events, for either engine: its saved transcript and the notes a restart left in it, as
+// its whole thread when it was moved between makers (src/handoffs.mjs; `sid`: the open chat, for one that was moved
+// here and has no id yet, so the switch is there before its first message). Never throws: a failure is one notice.
 async function historyOf(sessionId, cwd, sid) {
+  return handoffs.notes({ sessionId, sid }, await ownHistory(sessionId, cwd));
+}
+// One session's own events, with the notes a restart left in it.
+async function ownHistory(sessionId, cwd) {
   let events = [];
   if (sessionId && codexChats.has(sessionId)) {
     // A Codex chat: its own live process if it has one (it knows about a turn in flight), else the shared helper.
@@ -1584,16 +1628,17 @@ async function historyOf(sessionId, cwd, sid) {
     try { events = adaptHistory(await getSessionMessages(sessionId, { dir: cwd })); }
     catch (err) { events = [{ kind: 'notice', level: 'warn', text: `Could not load history: ${err?.message ?? err}` }]; }
   }
-  return handoffs.notes({ sessionId, sid }, sessionId ? withRestartNotes(sessionId, events) : events);
+  return sessionId ? withRestartNotes(sessionId, events) : events;
 }
 // `opts` as for session:open, with `replace` (the sid of the chat this pane held) in place of `replaceEmpty`.
 handle('pane:open', async (cwd, resume, opts) => {
   const checked = await openChecks(cwd, resume, opts);
   if (checked.error) return checked;
-  const { moved } = checked;
+  const { moved, back } = checked;
   hostPrefs = await readUserPrefs(envInfo?.env);
   const asked = engineToOpen(resume, opts);
-  const r = await chatHost().openPane(cwd, resume, { ...(asked === 'codex' && { engine: asked }), ...(moved && { handoffKey: moved.key }) });
+  const r = await chatHost().openPane(cwd, resume, { ...(asked === 'codex' && { engine: asked }), ...(moved && { handoffKey: moved.key }), ...(back?.text && { handBack: back.text }) });
+  if (back?.text && r.reused) r.session.handBack?.(back.text);
   if (!r.reused) engineEvents.onOpen({ sid: r.sid, kind: resume ? 'resumed' : 'new' });
   if (moved) handoffs.bind(moved.key, r.sid);
   nameOpened(resume, engineOf(r.session), cwd);
@@ -1700,7 +1745,7 @@ handle('session:queue', async (text, images) => (chats?.activeSid ? queueMessage
 handle('session:unqueue', async (id) => chats?.queueRemove(chats.activeSid, id) ?? { ok: false, removed: false, queue: [], v: 0 });
 handle('session:requeue', async (id, to) => chats?.queueMove(chats.activeSid, id, to) ?? { ok: false, moved: false, queue: [], v: 0 });
 // ⌘K: search what was said inside every chat (your projects and the loose-chats folder).
-handle('chats:search', async (query) => searchChats(query, [...(loadState().projects ?? []), await chatsDir(), currentCwd], { skip: superseded() }));
+handle('chats:search', async (query) => searchChats(query, [...(loadState().projects ?? []), await chatsDir(), currentCwd], { skip: new Set([...superseded(), ...handoffs.hidden()]) }));
 // A reloaded window asks for every chat's status (the sidebar spinners), since it only hears changes after that.
 handle('chats:list', async () => chats?.statusList() ?? []);
 // Home: every chat's live status, and acting on any chat from there (answer its question, stop it).
@@ -1722,7 +1767,13 @@ handle('session:context', async () => (current ? current.contextUsage() : null))
 // "Show earlier": the turns just older than the ones a very long chat opened with: { events } or { error }. Only an
 // OpenAI chat has any (Codex hands a long chat out in pages); a Claude chat is always read whole, so it answers
 // { events: [] }. `cwd` is not needed to find a chat by its id: it is in the call for a reader that will be.
-async function earlierOf(sessionId, cursor) { return codexChats.earlier(sessionId, { session: liveChat(sessionId), cursor }); }
+// A chat moved between makers pages through its thread: the page is that session's, with the rest of the thread from
+// the same stretch of time (src/handoffs.mjs; its cursor says where the part already shown begins).
+async function earlierOf(sessionId, cursor) {
+  const t = readThreadCursor(cursor);
+  const r = await codexChats.earlier(sessionId, { session: liveChat(sessionId), cursor: t ? t.cursor : cursor });
+  return t && Array.isArray(r?.events) ? { events: await handoffs.notes({ sessionId, hi: t.hi }, r.events) } : r;
+}
 handle('session:earlier', async (sessionId, cwd, cursor) => earlierOf(sessionId || current?.sessionId, cursor));
 // A chat's lifetime cost, working time and lines changed (Claude Code keeps them in the transcript).
 async function sessionTotals(cwd, sessionId) {

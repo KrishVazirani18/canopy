@@ -8,9 +8,10 @@ import { MessageResponse } from '@/components/ai-elements/message';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { api } from '@/lib/api';
 import { UPDATE_PROMPT } from '@/lib/request-updates';
-import { StoreContext, useStore, type TaskInfo } from '@/lib/store';
+import { StoreContext, useStore, type Item, type TaskInfo } from '@/lib/store';
 import { feature } from '@/lib/telemetry';
 import { cn } from '@/lib/utils';
+import { clock as waitClock, waitMs } from '@/lib/wait';
 import { Reveal } from './reveal';
 
 // Pop-ups about the chat center over the chat, not the whole window (the sidebar's width is --canopy-sidebar).
@@ -41,6 +42,23 @@ function noteOf(t: TaskInfo) {
   if (t.activity && t.activity.trim() !== (t.description ?? '').trim()) return t.activity.charAt(0).toLowerCase() + t.activity.slice(1);
   if (t.lastTool) return TOOL_WORDS[t.lastTool] ?? (t.lastTool.startsWith('mcp__') ? `using ${t.lastTool.split('__')[1]}` : 'working');
   return isCommand(t) ? 'running' : 'getting started';
+}
+/** A running command that is only a timer ("sleep 300"): how long it waits and how far along it is; else null. */
+function timerOf(t: TaskInfo, items: Item[], now: number) {
+  if (!isCommand(t) || !RUNNING.has(t.status) || !t.toolUseId || !t.startedAt) return null;
+  let total: number | null = null;
+  for (let i = items.length - 1; i >= 0; i--) { const it = items[i]; if (it.t === 'tool' && it.id === t.toolUseId) { total = waitMs(it.input?.command); break; } }
+  if (!total) return null;
+  const done = Math.min(1, Math.max(0, (now - t.startedAt) / total));
+  return { done, left: waitClock(total - (now - t.startedAt)) };
+}
+/** A thin bar that fills as a timer runs. */
+function TimerBar({ done, className }: { done: number; className?: string }) {
+  return (
+    <span aria-hidden className={cn('relative block h-[3px] overflow-hidden rounded-full bg-foreground/10', className)}>
+      <span className="absolute inset-y-0 left-0 rounded-full bg-foreground/45 transition-[width] duration-1000 ease-linear" style={{ width: `${done * 100}%` }} />
+    </span>
+  );
 }
 const elapsed = (t: TaskInfo, now: number) => (t.usage?.duration_ms ?? ((t.endedAt ?? now) - (t.startedAt ?? now)));
 
@@ -139,6 +157,8 @@ export function AgentsDrawer() {
   const names = runningList.length > 1 ? runningList.map(nameOf).join(', ') : '';
   // "Request Updates" shows while an agent or workflow runs (a command alone has nothing to report).
   const asking = runningList.some((t) => !isCommand(t));
+  // One timer running on its own: the closed line counts it down with a bar, in place of "1 command".
+  const focusTimer = focus && !agents.length ? timerOf(focus, store.items, now) : null;
 
   return (
     <Reveal show={shown.length > 0} duration={240}>
@@ -168,7 +188,13 @@ export function AgentsDrawer() {
             </span>
           )}
           {names && !open && <span className="min-w-0 truncate text-faint" title={names}>{names}</span>}
-          {commands.length > 0 && (
+          {focusTimer && !open && (
+            <span className="ml-auto flex shrink-0 items-center gap-2 pl-2 text-faint tabular-nums">
+              <TimerBar done={focusTimer.done} className="w-16" />
+              <span>{focusTimer.left} left</span>
+            </span>
+          )}
+          {commands.length > 0 && !(focusTimer && !open) && (
             <span className="flex shrink-0 items-center gap-1.5 text-faint">
               {agents.length > 0 && <span>·</span>}
               {agents.length > 0 && <span className={cn('size-1.5 rounded-full', commands.some((c) => RUNNING.has(c.status)) ? 'bg-good' : 'bg-muted-foreground/40')} />}
@@ -176,7 +202,7 @@ export function AgentsDrawer() {
             </span>
           )}
           {/* Open: ⌃ tucks it back under the box. Closed: ⌄ pulls it out. */}
-          {!asking && <ChevronDownIcon className={cn('ml-auto size-3.5 shrink-0 text-faint transition-transform duration-200', open && 'rotate-180')} />}
+          {!asking && <ChevronDownIcon className={cn(focusTimer && !open ? 'ml-1.5' : 'ml-auto', 'size-3.5 shrink-0 text-faint transition-transform duration-200', open && 'rotate-180')} />}
         </button>
         {asking && <RequestUpdate onAsk={requestUpdate} />}
         {asking && (
@@ -196,6 +222,7 @@ export function AgentsDrawer() {
               const running = RUNNING.has(t.status);
               const failed = t.status === 'failed';
               const steps = t.usage?.tool_uses;
+              const timer = timerOf(t, store.items, now);
               return (
                 // An agent opens its card (like a workflow): click anywhere on the row but its buttons.
                 <div key={t.taskId} className={cn('relative border-b border-hairline px-3.5 py-2 last:border-b-0', !isCommand(t) && 'cursor-pointer hover:bg-accent/30')}
@@ -211,11 +238,13 @@ export function AgentsDrawer() {
                       <span className="shrink-0 rounded border border-hairline px-1 text-micro text-muted-foreground">{kindOf(t)}{t.workflow ? ` · ${t.workflow}` : ''}</span>
                     )}
                     <span className="min-w-0 truncate text-foreground/90">{nameOf(t)}</span>
-                    <span className="ml-auto shrink-0 tabular-nums text-faint">{fmt(elapsed(t, now))}</span>
+                    <span className="ml-auto shrink-0 tabular-nums text-faint">{timer ? `${timer.left} left` : fmt(elapsed(t, now))}</span>
                     {running && <StopButton name={`${kindOf(t)} ${nameOf(t)}`} onStop={() => store.stopTask(t.taskId)} />}
                   </div>
                   <div className="mt-0.5 ml-5 min-w-0 text-faint">
-                    {running ? (
+                    {timer ? (
+                      <TimerBar done={timer.done} className="my-1.5" />
+                    ) : running ? (
                       <span className="block truncate"><span className={cn(!isCommand(t) && 'shimmer-text')}>{noteOf(t)}</span>{steps ? ` · ${steps} step${steps === 1 ? '' : 's'}` : ''}</span>
                     ) : failed ? (
                       <span className="text-destructive/80">{t.error || 'It hit a problem and stopped.'}</span>

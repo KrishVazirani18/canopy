@@ -177,3 +177,36 @@ export function switchedText(offer: { label: string }): { title: string; descrip
   const name = offer.label.startsWith('API key') ? 'your API key' : offer.label;
   return { title: `New chats use ${name}`, description: 'Open chats stay on the account they started on.' };
 }
+
+// ---------- Home's "today" ----------
+
+/** What Home's Today line says the day used up, per account in use. A plan's chats are not charged one by one, so a
+ *  dollar figure there only frightens: they read as how full the plan is (the week, else the window there is). An
+ *  account billed per use reads in dollars, Canopy's own count for today. `plans` empty and `spend` null when nothing
+ *  is known yet; then the line says neither, rather than guessing. `dollars`: every account in use is billed per use,
+ *  so the day's whole cost is the bill and reads as before. */
+export type DayUse = { plans: { engine: Engine; percent: number; what: string }[]; spend: number | null; dollars: boolean };
+
+const weekly = (w: { key: string; label: string }) => w.key === 'seven_day' || w.key === 'secondary' || w.label === 'This week';
+/** "this week’s limit", "the current session’s limit", "the 30-day window’s limit". */
+const limitName = (w: { key: string; label: string }) =>
+  weekly(w) ? 'this week’s limit' : w.key === 'five_hour' || w.label === 'Current session' ? 'this session’s limit' : `the ${w.label.charAt(0).toLowerCase()}${w.label.slice(1)}’s limit`;
+
+export function dayUse(sections: UsageSection[] | null | undefined): DayUse {
+  const shown = (sections ?? []).filter((s) => s.shape !== 'attention');
+  const plans: DayUse['plans'] = [];
+  let spend: number | null = null;
+  for (const s of shown) {
+    if (s.shape === 'plan') {
+      const ws = s.windows ?? [];
+      const w = ws.find(weekly) ?? ws[0];
+      if (w) plans.push({ engine: s.engine, percent: w.percent, what: limitName(w) });
+    } else if (s.count) spend = (spend ?? 0) + s.count.today;
+  }
+  return { plans, spend, dollars: shown.length > 0 && shown.every((s) => s.shape === 'spend') };
+}
+
+/** The plan half of the line: "Claude is at 34% of this week’s limit", "… and Codex at 12% of this week’s limit". */
+export function planText(plans: DayUse['plans']): string {
+  return plans.map((p, i) => `${MAKER[p.engine]} ${i ? 'at' : 'is at'} ${percentText(p.percent)} of ${p.what}`).join(' and ');
+}

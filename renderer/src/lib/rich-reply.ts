@@ -7,6 +7,12 @@ import { toast } from 'sonner';
 import { api } from './api';
 import { feature } from './telemetry';
 
+export async function openReplyPath(path: string, reveal: boolean) {
+  feature(reveal ? 'reveal_in_finder' : 'file_opened');
+  const res = await api.openPath(path, null, reveal);
+  if (!res?.ok) toast(res?.missing ? `Couldn’t find ${path}` : `Couldn’t open ${path}`);
+}
+
 const PATH = /^(?:~|\.{1,2})?\/?(?:[\w.@+-]+\/)*[\w.@+-]+(?::\d+(?::\d+)?)?$/;
 function asPath(text: string): string | null {
   const t = text.trim();
@@ -76,9 +82,7 @@ export function installRichReplies() {
     const code = t.closest<HTMLElement>('code[data-path]');
     if (code && !window.getSelection()?.toString()) {
       e.preventDefault();
-      feature(e.altKey ? 'reveal_in_finder' : 'file_opened');
-      const res = await api.openPath(code.dataset.path!, null, e.altKey);
-      if (!res?.ok) toast(res?.missing ? `Couldn’t find ${code.dataset.path}` : `Couldn’t open ${code.dataset.path}`);
+      await openReplyPath(code.dataset.path!, e.altKey);
       return;
     }
     const th = t.closest<HTMLTableCellElement>('[data-sortable]');

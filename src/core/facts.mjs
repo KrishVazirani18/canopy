@@ -22,5 +22,8 @@ export const CANOPY_FACTS = [
   '- A shell command in a ```bash block of yours has a Run button: the user can run it in a terminal inside Canopy, in this folder, and what it prints comes back to you. When a step needs a terminal you can\'t use (a sign-in that opens the browser, a command that asks questions), give it that way and say to click Run, instead of asking them to open the Terminal app.',
 ].join('\n');
 
-/** For a chat on another maker's model (Codex's developer instructions): the same facts, with no maker named. */
-export const CANOPY_FACTS_NEUTRAL = CANOPY_FACTS.replace('working with Claude.', 'working with AI coding agents.');
+/** For Codex: the same facts with no maker named, plus which of its visualization formats works inline. */
+export const CANOPY_FACTS_NEUTRAL = [
+  CANOPY_FACTS.replace('working with Claude.', 'working with AI coding agents.'),
+  '- For inline visuals in Canopy, use mcp__canopy__read_me and mcp__canopy__show_widget when available. The bundled Codex Visualize skill targets a different renderer. Link to saved files with Markdown.',
+].join('\n');

@@ -47,10 +47,13 @@ export function driftLine(tool: string, count: number): string {
   return `${count} ${count === 1 ? 'thing' : 'things'} ${tool} sent that this version of Canopy skips. Nothing is broken.`;
 }
 
-/** The toast for something upkeep just did. `good`: it fixed something that was in your way. */
-export function upkeepToast(tool: string, n: UpkeepNote): { id: string; title: string; description: string; good: boolean } {
+/**
+ * The toast for something upkeep just did. `good`: it fixed something that was in your way. Null for drift: something
+ * the tool sent that Canopy skips is Canopy's to fix, not yours, so it is only listed in Settings and logged.
+ */
+export function upkeepToast(tool: string, n: UpkeepNote): { id: string; title: string; description: string; good: boolean } | null {
   const key = tool === 'Claude Code' ? '' : `:${tool.toLowerCase()}`;
-  if (n.kind === 'drift') return { id: `drift${key}:${n.label}`, title: `${tool} sent something new`, description: `Canopy skipped “${n.label}” for now. It’s listed in Settings → Advanced.`, good: false };
+  if (n.kind === 'drift') return null;
   if (n.kind === 'repaired') return { id: `upkeep${key}`, title: `${tool} updated to ${n.to}`, description: 'It was too old for Canopy. Send your message again.', good: true };
   return { id: `upkeep${key}`, title: `${tool} updated to ${n.to}`, description: 'New chats use it right away.', good: false };
 }

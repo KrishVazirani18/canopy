@@ -1,9 +1,11 @@
 // Moving a chat to the other maker, window side: can this chat move, where to, and the call.
 //
-// Picking the other maker's model in a chat that has started moves the chat: a new chat of that maker opens in the
-// same folder (in the same pane, in Multi mode) and starts with what the old one was about. Main builds what is
-// carried from the old chat itself, with no model, and nothing is sent until you send the new chat its first
-// message (src/handoffs.mjs). The old chat stays where it was; the two say which continued which (handoff-line.tsx).
+// Picking the other maker's model in a chat that has started moves the chat: under the hood a session of that maker
+// takes over in the same folder (in the same pane, in Multi mode), but on screen it stays one chat, with one row in
+// the sidebar and one transcript, and "Canopy switched from … → …" where it changed (handoff-line.tsx). The first
+// time, that is a new session that starts with what the chat was about: main builds it with no model, and nothing
+// is sent until your next message (src/handoffs.mjs). After that, a move goes back to the session that maker already
+// has (`back`), which is told what happened while it was away.
 //
 //   canMove(store)       'ok' | 'busy' | 'no'  (the rules are lib/move-rules.ts, tested in node)
 //   moveTarget(store)    the model "Move to …" lands on, and its name
@@ -16,11 +18,13 @@ import type { OpenOpts } from './api';
 import { choices } from './choices';
 import { claudeRows, openaiRows } from './engines';
 import { allModels, savedModels } from './models';
-import { MOVE_BUSY, movable, moveSource, otherEngine, targetFor, type Movable, type MoveTarget } from './move-rules.ts';
+import { MOVE_BUSY, backTarget, movable, moveSource, otherEngine, targetFor, type Movable, type MoveTarget } from './move-rules.ts';
 import type { Store } from './store';
 
-export { carriedLine, modelLabel, moveItem, moveLine, moveSource, otherEngine, rowWords, shownDigest, type Movable, type MoveTarget } from './move-rules.ts';
+export { backTarget, modelLabel, moveItem, moveLine, moveSource, otherEngine, rowWords, type Movable, type MoveTarget } from './move-rules.ts';
 export type Move = NonNullable<OpenOpts['move']>;
+/** A switch back to the session the other maker already has in this chat's thread: `to`, opened in its place. */
+export type Back = NonNullable<OpenOpts['back']> & { to: string };
 
 const SHARED_MODES = ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'];
 const FREE_WAIT_MS = 5000;
@@ -80,6 +84,14 @@ export async function moveChat(store: Store, toModel: string, fromModel: string)
     };
     const giveUp = setTimeout(() => window.removeEventListener('canopy:moved', arrived), 20000);
     window.addEventListener('canopy:moved', arrived, { once: true });
+    // The other maker ran this chat before: it goes back to that session, which is told what happened meanwhile.
+    // (A chat moved here with no message yet goes back to the very chat it came from: `back.to` is `from`.)
+    const to = source.pending ? source.id : backTarget(store, otherEngine(store.meta.engine));
+    if (to) {
+      const back: Back = { to, from: source.pending ? to : source.id, fromModel: source.model ?? fromModel, toModel };
+      window.dispatchEvent(new CustomEvent('canopy:other-maker', { detail: { back } }));
+      return true;
+    }
     const move: Move = { from: source.id, fromModel: source.model ?? fromModel, toModel };
     window.dispatchEvent(new CustomEvent('canopy:other-maker', { detail: { move } }));
     return true;

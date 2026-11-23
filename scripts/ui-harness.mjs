@@ -25,6 +25,7 @@
 //   &stats=new|on|off|empty|blocked   usage stats (Settings > Privacy): new shows the first-launch notice, off starts
 //                            with the switch off, empty has nothing in "See what's sent", blocked is a copy that can't
 //                            send (the notice is owed and must not show). Left out: this main has no usage stats
+//   &switched=1              (with started=1) the chat switched maker after its first turn and went on there
 //   &settings=models         open Settings at that section once the window is up
 //   &memory=5                Canopy Memory holds that many notes (Settings > You > Memory lists them; &settings=memory
 //                            opens there), and with &started=1 the chat on screen saved two of them (one new, one
@@ -45,7 +46,9 @@
 //   &dev=0                   the window as the released app has it: no Playground, no ?mock=
 //   &usage=perUse|unpriced   what the right panel's Usage tab is told (left out: nothing). perUse: a Console sign-in
 //                            and an OpenAI API key, both billed per use and both in dollars, on the day counting
-//                            began. unpriced: the same some days on, with a Codex model Canopy has no price for
+//                            began. unpriced: the same some days on, with a Codex model Canopy has no price for.
+//                            plan: a Claude Max plan, 34% into its week (Home's Today line then says that, not dollars).
+//                            mixed: that plan beside an OpenAI API key billed per use
 //   &queue=3                 the chat on screen is working, with that many messages waiting behind its turn (drag
 //                            one by its arrow to change the order)
 //   &theme=dark|light        (default: the browser's)
@@ -193,6 +196,17 @@ function bridge(data) {
       { kind: 'user-text', text: `Review helper ${i + 1} and its callers.`, at: Date.now() - (count - i) * 60000, history: true },
       { kind: 'assistant-text', text: `### Helper ${i + 1}\n\nThe callers now use \`readRows\`.\n\n- Preserves the existing return type.\n- Handles missing entries.\n\n\`\`\`ts\nexport const readRows = (rows: string[]) => rows.filter(Boolean);\n\`\`\``, at: Date.now() - (count - i) * 60000 + 1000, history: true },
     ]).flat());
+  }
+  // &switched=1 (with &started=1): the chat switched maker after its first turn, and went on there (src/handoffs.mjs).
+  if (started && q.has('switched')) {
+    const at = Date.now() - 40000;
+    const to = engine === 'codex' ? { engine: 'codex', model: 'GPT-6.1 Sol' } : { engine: 'claude', model: 'Opus 5.5' };
+    const from = engine === 'codex' ? { engine: 'claude', model: 'Opus 5.5' } : { engine: 'codex', model: 'GPT-6.1 Sol' };
+    history.push(
+      { kind: 'handoff', dir: 'switch', at, from: { id: 'harness-before', ...from }, to: { id: sessionId, ...to } },
+      { kind: 'user-text', text: 'Add a test for the new name too.', at: at + 1000, uuid: 'u-after', history: true },
+      { kind: 'assistant-text', text: 'Added one: `readRows` drops the empty rows and keeps the order.', at: at + 5000, history: true },
+    );
   }
   // Canopy Memory (src/core/memory-store.mjs), as main would answer: &memory=N notes, kept here for the page to
   // edit, delete and bring back. The chat on screen saved the first (new) and the second (it replaced a note).
@@ -421,7 +435,10 @@ function bridge(data) {
   const midnight = new Date().setHours(0, 0, 0, 0);
   const perUse = (maker, more, count) => ({ engine: maker, account: account(maker, more), shape: 'spend', at: Date.now(), loading: false, error: null, count: { unit: 'usd', ...count } });
   const loose = usageMode === 'unpriced';
-  const usageNow = !usageMode ? null : { checking: false, sections: [
+  const plan = { engine: 'claude', account: account('claude', { kind: 'plan', label: 'Max', plan: 'max' }), shape: 'plan', at: Date.now(), loading: false, error: null, plan: 'max',
+    windows: [{ key: 'five_hour', label: 'Current session', percent: 61, resetsAt: Date.now() + 2 * 3_600_000 }, { key: 'seven_day', label: 'This week', percent: 34, resetsAt: Date.now() + 3 * 86_400_000 }] };
+  const usageNow = !usageMode ? null : usageMode === 'plan' || usageMode === 'mixed' ? { checking: false, sections: [plan,
+    ...(usageMode === 'mixed' ? [perUse('codex', { kind: 'key', label: 'API key' }, { today: 4.1, month: 4.1, since: null, chat: null })] : [])] } : { checking: false, sections: [
     perUse('claude', { kind: 'console', label: 'Console', email: 'sam@example.com' }, { today: 491.42, month: loose ? 2140.5 : 491.42, since: midnight - (loose ? 5 * 86_400_000 : 0), chat: engine === 'claude' ? 675.13 : null }),
     perUse('codex', { kind: 'key', label: 'API key' }, {
       today: 21.37, month: loose ? 84.1 : 21.37, since: midnight - (loose ? 5 * 86_400_000 : 0), chat: engine === 'codex' ? 9.84 : null,

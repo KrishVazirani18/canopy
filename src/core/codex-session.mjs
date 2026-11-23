@@ -266,7 +266,8 @@ export class CodexSession extends EventEmitter {
     };
     this.title = typeof title === 'string' ? title : undefined;
     // A chat that already exists has had its digest, so a resumed one never carries. `thread`: the thread it went into.
-    this.handoff = !this.sessionId && isPlain(handoff) && typeof handoff.text === 'string' && handoff.text ? { text: handoff.text, thread: null } : null;
+    // A chat gone back to from the other maker (`back`) carries what happened while it was away (see handBack()).
+    this.handoff = (!this.sessionId || handoff?.back === true) && isPlain(handoff) && typeof handoff.text === 'string' && handoff.text ? { text: handoff.text, thread: null, back: handoff.back === true } : null;
     this.ext = new Set(extended === true ? EXTENDED_FEATURES : Array.isArray(extended) ? extended : []);
     this.debug = !!debug;
     this.autoRestart = autoRestart !== false;
@@ -1441,7 +1442,7 @@ export class CodexSession extends EventEmitter {
   // Resolves to whether the turn should still start: false when the process or the turn went away meanwhile.
   async carry(proc, entry, active) {
     const h = this.handoff;
-    if (this.sessionId) { this.handoff = null; return true; }
+    if (this.sessionId && !h?.back) { this.handoff = null; return true; }
     if (!h || h.thread === this.threadId || isHandoffText(entry.msg?.[0]?.text)) return true;
     const text = forCodex(h.text);
     // From here the message is on its way, as it is while turn/start is out: Stop lets the turn start and then stops it.
@@ -1453,9 +1454,17 @@ export class CodexSession extends EventEmitter {
       if (this.proc === proc && err?.code !== 'closed') {
         this.log('warn', 'the digest could not be put into the thread; it goes with the first message', { error: this.redact(errText(err)) });
         entry.msg = [{ type: 'text', text, text_elements: [] }, ...(Array.isArray(entry.msg) ? entry.msg : [])];
+        if (h.back) h.thread = this.threadId; // a chat gone back to is told once: this message carries it
       }
     }
     return this.active === active && this.proc === proc && !this.closed;
+  }
+
+  /** The chat was gone back to from the other maker: `text` (a digest, handoff.mjs) goes in before its next turn. */
+  handBack(text) {
+    if (this.closed || typeof text !== 'string' || !text) return false;
+    this.handoff = { text, thread: null, back: true };
+    return true;
   }
 
   // What the user did in the app that the model did not see (notes.mjs: `text` is the block) goes into the thread

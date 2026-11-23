@@ -17,7 +17,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import { flushSync } from 'react-dom';
 import { Maximize2Icon, MessageSquareIcon, Minimize2Icon, PlusIcon, SearchIcon, XIcon } from 'lucide-react';
 import { api, type CanopyEvent, type LiveSession, type OpenOpts, type SessionSummary } from '@/lib/api';
-import type { Move } from '@/lib/move';
+import type { Back, Move } from '@/lib/move';
 import { toast } from 'sonner';
 import { sessionsChanged, useChatStatus } from '@/lib/chats';
 import { choices } from '@/lib/choices';
@@ -37,7 +37,7 @@ export const MAX_PANES = 4;
 // cwd null: an empty pane. `replace`: the chat (sid) this pane held when the other maker's model was picked in it;
 // main lets go of that chat if it was never used. `move`: that chat had started, so the new one carries on from it
 // (lib/move.ts); kept until the new chat has its id, so a pane that has to open again before then moves again.
-type Pane = { key: string; cwd: string | null; sessionId: string | null; epoch: number; replace?: string; move?: Move };
+type Pane = { key: string; cwd: string | null; sessionId: string | null; epoch: number; replace?: string; move?: Move; back?: Back };
 const KEY = 'canopy.multi';
 let seq = 0;
 const nextKey = () => `p${Date.now().toString(36)}${++seq}`;
@@ -211,14 +211,17 @@ function ChatPane({ pane, focused, onSid, onSession, onMoveRefused }: ChatPanePr
     store.setEngine(asked);
     store.setMeta({ loading: true, sessionId: resume });
     const move = resume ? undefined : pane.move;
-    const ask: OpenOpts = { ...(!resume && asked === 'codex' && { engine: asked }), ...(replace.current && { replace: replace.current }), ...(move && { move }) };
+    // Gone back to the session the other maker already has in this chat's thread (lib/move.ts).
+    const back = resume && pane.back?.to === resume ? pane.back : undefined;
+    const backAsk = back && back.from !== resume ? { from: back.from, fromModel: back.fromModel, toModel: back.toModel } : undefined;
+    const ask: OpenOpts = { ...(!resume && asked === 'codex' && { engine: asked }), ...(replace.current && { replace: replace.current }), ...(move && { move }), ...(backAsk && { back: backAsk }) };
     replace.current = undefined;
     (async () => {
       let r: Awaited<ReturnType<NonNullable<typeof api.pane>['open']>>;
       try { r = api.pane ? await api.pane.open(cwd, resume, Object.keys(ask).length ? ask : undefined) : { error: OPEN_FAILED }; }
       catch (err) { r = { error: String((err as Error)?.message ?? err) || OPEN_FAILED }; }
       if (!alive) return;
-      if (r?.error && move) { store.bind(null); ready = true; onMoveRefused(pane.key, move.from, r.error); return; }
+      if (r?.error && (move || back)) { store.bind(null); ready = true; onMoveRefused(pane.key, (move ?? back)!.from, r.error); return; }
       if (r?.error || !r.sid) { store.bind(null); store.setMeta({ loading: false }); store.addError(r?.error ?? OPEN_FAILED); ready = true; return; }
       store.bind(r.sid);
       onSid(pane.key, r.sid);
@@ -233,10 +236,11 @@ function ChatPane({ pane, focused, onSid, onSession, onMoveRefused }: ChatPanePr
         for (const ev of live.pending ?? []) store.handle(ev);
         store.setQueue(live.queue, live.queueV);
         if (Array.isArray(live.tasks)) store.setMeta({ tasks: live.tasks as never });
+        if (back) applyChoices(store, r.engine ?? live.engine, r.defaults?.mode, null); // it takes the model you picked
       } else {
         // A chat starting here takes your current choices for its maker, like opening one on the main screen.
         store.setMeta({ sessionId: resume, mode: choices.mode ?? r.defaults?.mode ?? null, accountId: r.accountId });
-        applyChoices(store, r.engine, r.defaults?.mode, resume ? r.history ?? [] : null);
+        applyChoices(store, r.engine, r.defaults?.mode, resume && !back ? r.history ?? [] : null);
         store.loadHistory(r.history ?? []);
       }
       // Events that came while it opened, except those its snapshot already covers.
@@ -245,7 +249,7 @@ function ChatPane({ pane, focused, onSid, onSession, onMoveRefused }: ChatPanePr
       ready = true;
       store.setMeta({ loading: false });
       store.fetchContext(8);
-      if (move) window.dispatchEvent(new Event('canopy:moved')); // what you had typed follows you (lib/move.ts)
+      if (move || back) window.dispatchEvent(new Event('canopy:moved')); // what you had typed follows you (lib/move.ts)
     })();
     return () => { alive = false; off(); offClosed(); store.reload = null; onSid(pane.key, null); };
   }, [pane.cwd, reopen]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -330,7 +334,7 @@ export function MultiView({ sessions, chatsDir, active }: MultiViewProps) {
     for (const k of [...sids.current.keys()]) if (!keys.has(k)) sids.current.delete(k);
     publish();
   }, [panes, publish]);
-  const onSession = useCallback((key: string, sessionId: string) => setPanes((ps) => ps.map((p) => (p.key === key && p.sessionId !== sessionId ? { ...p, sessionId, move: undefined } : p))), [setPanes]);
+  const onSession = useCallback((key: string, sessionId: string) => setPanes((ps) => ps.map((p) => (p.key === key && p.sessionId !== sessionId ? { ...p, sessionId, move: undefined, back: undefined } : p))), [setPanes]);
 
   const titleOf = useCallback((id: string | null) => (id ? sessions.find((s) => s.id === id)?.title ?? null : null), [sessions]);
   const shownIds = new Set(panes.map((p) => p.sessionId).filter(Boolean));
@@ -343,14 +347,14 @@ export function MultiView({ sessions, chatsDir, active }: MultiViewProps) {
 
   /** Put a chat (or a new one) into a pane. `replace`: the chat the pane held, for main to let go of if it was never
    *  used. `move`: the new chat carries on from that chat. */
-  const fill = useCallback((key: string, cwd: string, sessionId: string | null, replace?: string, move?: Move) => animate(() => {
+  const fill = useCallback((key: string, cwd: string, sessionId: string | null, replace?: string, move?: Move, back?: Back) => animate(() => {
     sids.current.delete(key);
-    setPanes((ps) => ps.map((p) => (p.key === key ? { ...p, cwd, sessionId, epoch: p.epoch + 1, replace, move } : p)));
+    setPanes((ps) => ps.map((p) => (p.key === key ? { ...p, cwd, sessionId, epoch: p.epoch + 1, replace, move, back } : p)));
     setFocus(key);
   }), [setPanes, setFocus]);
   const onMoveRefused = useCallback((key: string, from: string, message: string) => {
     toast(message, { id: 'move-busy' });
-    setPanes((ps) => ps.map((p) => (p.key === key ? { ...p, sessionId: from, epoch: p.epoch + 1, replace: undefined, move: undefined } : p)));
+    setPanes((ps) => ps.map((p) => (p.key === key ? { ...p, sessionId: from, epoch: p.epoch + 1, replace: undefined, move: undefined, back: undefined } : p)));
   }, [setPanes]);
   const add = useCallback(() => {
     if (panes.length >= MAX_PANES) return;
@@ -408,11 +412,17 @@ export function MultiView({ sessions, chatsDir, active }: MultiViewProps) {
   }, [active, panes, focus, max, chatsDir, fill, setFocus, toggleMax]);
 
   // The other maker's model was picked in the pane you are in (controls.tsx): a chat of that maker takes this pane, in
-  // the same folder. A chat that had not started is let go of; a started one is moved (`move`): it stays in the
-  // sidebar as it was, and the new chat in this pane carries on from it.
+  // the same folder. A chat that had not started is let go of; a started one is moved, and stays one chat on screen:
+  // a new session of that maker carries it on (`move`), or the one that maker already has in it (`back`).
   useEffect(() => {
     if (!active) return;
-    const on = (e: Event) => { const p = panes.find((x) => x.key === focus); if (p?.cwd) fill(p.key, p.cwd, null, sids.current.get(p.key), (e as CustomEvent<{ move?: Move } | undefined>).detail?.move); };
+    const on = (e: Event) => {
+      const p = panes.find((x) => x.key === focus);
+      if (!p?.cwd) return;
+      const d = (e as CustomEvent<{ move?: Move; back?: Back } | undefined>).detail;
+      if (d?.back) fill(p.key, p.cwd, d.back.to, sids.current.get(p.key), undefined, d.back);
+      else fill(p.key, p.cwd, null, sids.current.get(p.key), d?.move);
+    };
     window.addEventListener('canopy:other-maker', on);
     return () => window.removeEventListener('canopy:other-maker', on);
   }, [active, panes, focus, fill]);

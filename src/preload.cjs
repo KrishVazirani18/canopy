@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('canopy', {
   dev: process.argv.includes('--canopy-dev'),
   init: () => ipcRenderer.invoke('app:init'),
   recheck: () => ipcRenderer.invoke('app:recheck'),
+  // Turn on Canopy's notifications: posts one, so macOS asks; opens System Settings when it was turned down.
+  enableNotifications: () => ipcRenderer.invoke('notifications:enable'),
   pickFolder: () => ipcRenderer.invoke('folder:pick'),
   listSessions: (cwd) => ipcRenderer.invoke('sessions:list', cwd),
   listProjects: () => ipcRenderer.invoke('projects:list'),

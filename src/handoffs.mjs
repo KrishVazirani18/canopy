@@ -1,17 +1,21 @@
 // Moving a chat to the other maker, host side.
 //
-// A move is a new chat in the same folder that starts with what the old one was about. This file reads the old
-// chat, has core/handoff.mjs build the digest and the transcript (plain code, no model), writes the two files,
-// hands the new chat's session its digest, and remembers which chat continued which, so each can say so:
-// "Continued from …" at the top of the new chat, "Continued in …" at the end of the old one.
+// A move is, under the hood, a session of the other maker in the same folder that starts with what the chat was
+// about. On screen it is one chat: the sessions it ran on make one thread, listed once in the sidebar (by the session
+// it runs on now, the head) and shown as one transcript, with "Canopy switched from <model> → <model>" where the
+// maker changed. A thread has at most one session of each maker: the first move opens a new one, and every move
+// after that goes back to the session that maker already has, which is told what happened while it was away.
 //
-//   prepare(move, about)     a move was asked for: read the old chat, write the files, keep a pending record
+//   prepare(move, about)     a first move was asked for: read the chat, write the files, keep a pending record
+//   back(move, about)        a move back to the session the other maker already has: what it is told, and the link
+//   thread(id)               the thread a chat is in: its sessions in order, the switches, and the head (null: none)
+//   hidden()                 every chat in a thread except its head: never listed on their own
 //   sessionOpts(o)           what the new chat's session is created with (and a reopened moved chat's)
 //   bind(key, sid)           the new chat is open: the pending record is that chat's
 //   forget(sid)              that chat was let go before its first message: its pending record goes with it
 //   onEvent(ev, entry)       the new chat got its id: the record is saved, the chat takes the old one's name, and
 //                            the host hears of it (`onMoved`), so the old chat's model can be told should you go back
-//   notes(which, events)     a chat's history with its "Continued…" lines
+//   notes(which, events)     a chat's history as its whole thread: each session's part, a switch line between them
 //   sessionTitle(row)        a Claude chat's title for the sidebar, never the digest its first message carried
 //
 // Contract:
@@ -21,10 +25,25 @@
 //    folder 0700, files 0600. The newest 200 folders are kept. Nothing under ~/.claude or ~/.codex is written.
 //  - Saved links: state.json key `handoffs`, { [new chat's id]: { from, to, cwd, at, key, tokens, counts } }, the
 //    newest 500. A move costs nothing until the new chat's first message: until then its record is only in memory.
+//    A move back is saved at once, under `back-<time>-<id>`, with `to.id` (the session gone back to) and `back: true`.
+//  - Parts of a thread are told apart by time: a session's events from when the thread switched to it until it
+//    switched away. An event with no time goes with the one before it.
 import { mkdir, readFile, readdir, rm, writeFile, chmod } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { buildDigest, exportTranscript, stripHandoff, tokensOf } from './core/handoff.mjs';
+
+const THREAD_CURSOR = 'canopy-thread:';
+/** A long chat's "Show earlier" cursor, with where the part already shown begins (`hi`), so the next page fits. */
+export const threadCursor = (hi, cursor) => `${THREAD_CURSOR}${hi}:${cursor}`;
+/** { hi, cursor } from a cursor threadCursor made; null for any other. */
+export function readThreadCursor(c) {
+  if (typeof c !== 'string' || !c.startsWith(THREAD_CURSOR)) return null;
+  const rest = c.slice(THREAD_CURSOR.length);
+  const i = rest.indexOf(':');
+  const hi = Number(rest.slice(0, i));
+  return i > 0 && Number.isFinite(hi) ? { hi, cursor: rest.slice(i + 1) } : null;
+}
 import { redact as plainRedact } from './core/redact.mjs';
 
 export const HANDOFF_FOLDERS_MAX = 200;
@@ -55,7 +74,7 @@ export class Handoffs {
    *   load: () => object | null | undefined,        the saved links (state.json's `handoffs`)
    *   save: (links: object) => unknown,
    *   dir: string | (() => string),                 where the folders go
-   *   historyOf: (sessionId: string, cwd: string) => Promise<object[]>,     a chat's Canopy events
+   *   historyOf: (sessionId: string, cwd: string) => Promise<object[]>,     a session's own Canopy events (no thread)
    *   chatOf?: (sessionId: string, cwd: string) => Promise<{ engine?: string, title?: string } | null> | object | null,
    *   gitState?: (cwd: string) => Promise<{ branch?: string | null, status?: string | null } | null>,
    *   rename?: (chat: { id: string, engine: string, cwd: string, sid: string }, title: string) => unknown,
@@ -97,7 +116,9 @@ export class Handoffs {
       const cwd = str(about?.cwd);
       if (!from || !cwd || !this.dirOf()) return { ok: false, message: MOVE_FAILED };
       if (about?.busy) return { ok: false, message: MOVE_BUSY };
-      const events = await this.historyOf(from, cwd);
+      const own = await this.historyOf(from, cwd);
+      // A chat that is a thread already carries all of it.
+      const events = Array.isArray(own) && this.thread(from) ? await this.notes({ sessionId: from, cwd }, own) : own;
       if (!Array.isArray(events) || !events.some((e) => e?.kind === 'user-text' || e?.kind === 'assistant-text')) {
         // Nothing was said in it, or it could not be read (that is one warning in the list): either way there is nothing to carry.
         return { ok: false, message: Array.isArray(events) && !events.some((e) => e?.kind === 'notice' && e.level === 'warn') ? MOVE_EMPTY : MOVE_FAILED };
@@ -145,15 +166,19 @@ export class Handoffs {
 
   /**
    * What a chat's session is created with, on top of the rest: the digest, the folder of the two files (so opening
-   * the transcript never asks) and the old chat's name for a chat being moved into (`o.handoffKey`); the folder
-   * alone for a moved chat being reopened (`o.resume`); nothing for any other chat.
+   * the transcript never asks) and the old chat's name for a chat being moved into (`o.handoffKey`); what happened
+   * while it was away for a session gone back to (`o.handBack`, the text back() gave); the folder alone for a
+   * moved chat being reopened (`o.resume`); nothing for any other chat.
    */
   sessionOpts(o) {
     try {
       const p = o?.handoffKey ? this.pending.get(o.handoffKey) : null;
       if (p) return { handoff: { text: p.text }, additionalDirectories: [this.#folder(o.handoffKey)], ...(p.record.from.title && { title: p.record.from.title }) };
+      // A session gone back to (back()): what happened while it was away goes with its next message.
+      const back = typeof o?.handBack === 'string' && o.handBack ? { handoff: { text: o.handBack, back: true } } : {};
       const link = o?.resume ? this.#links()[o.resume] : null;
-      if (link?.key && existsSync(this.#folder(link.key))) return { additionalDirectories: [this.#folder(link.key)] };
+      if (link?.key && existsSync(this.#folder(link.key))) return { ...back, additionalDirectories: [this.#folder(link.key)] };
+      return back;
     } catch (err) { this.log(`handoff: ${err?.message ?? err}`); }
     return {};
   }
@@ -187,9 +212,19 @@ export class Handoffs {
       if (!isPlain(ev)) return;
       const id = str(ev.sessionId);
       if (ev.kind === 'meta' && id && str(ev.previousSessionId) && (ev.supersedes === ev.previousSessionId || entry?.engine === 'codex')) {
+        // Wherever the old id is named (the key of the chat moved into, either end of a link), the new one is.
+        const prev = ev.previousSessionId;
         const links = this.#links();
-        const link = links[ev.previousSessionId];
-        if (link && !links[id]) { const next = { ...links, [id]: link }; delete next[ev.previousSessionId]; this.save(next); this.onChange(); }
+        let changed = false;
+        const next = {};
+        for (const [k, r] of Object.entries(links)) {
+          let key = k, rec = r;
+          if (k === prev && !links[id]) { key = id; changed = true; }
+          if (isPlain(rec) && rec.from?.id === prev) { rec = { ...rec, from: { ...rec.from, id } }; changed = true; }
+          if (isPlain(rec) && rec.to?.id === prev) { rec = { ...rec, to: { ...rec.to, id } }; changed = true; }
+          next[key] = rec;
+        }
+        if (changed) { this.save(next); this.onChange(); }
         return;
       }
       if (ev.kind !== 'init' || !id) return;
@@ -207,6 +242,133 @@ export class Handoffs {
     } catch (err) { this.log(`handoff: ${err?.message ?? err}`); }
   }
 
+  // ---- the thread ----
+
+  // Every link as an edge from one session to the next, oldest first.
+  #edges(links = this.#links()) {
+    return Object.entries(links)
+      .filter(([, r]) => isPlain(r) && str(r.from?.id))
+      .map(([key, r]) => ({ key, from: r.from.id, to: str(r.to?.id) || key, at: Number(r.at) || 0, r }))
+      .filter((e) => e.to !== e.from)
+      .sort((a, b) => a.at - b.at);
+  }
+
+  /**
+   * The thread the chat `id` is in, or null when it was never moved. `segs`: its sessions in the order they ran,
+   * each with when it began (`from`) and ended (`until`), so a session gone back to is there twice. `edges[i]` is
+   * the switch between `segs[i]` and `segs[i + 1]`. `head`: the session it runs on now.
+   */
+  thread(id, edges = this.#edges()) {
+    if (!str(id)) return null;
+    const ids = new Set([id]);
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const e of edges) if (ids.has(e.from) !== ids.has(e.to)) { ids.add(e.from); ids.add(e.to); grew = true; }
+    }
+    const mine = edges.filter((e) => ids.has(e.from));
+    if (!mine.length) return null;
+    const segs = [{ id: mine[0].from, engine: engineName(mine[0].r.from?.engine), from: -Infinity, until: mine[0].at, cwd: str(mine[0].r.cwd) }];
+    mine.forEach((e, i) => segs.push({ id: e.to, engine: engineName(e.r.to?.engine), from: e.at, until: mine[i + 1]?.at ?? Infinity, cwd: str(e.r.cwd) }));
+    return { ids, edges: mine, segs, head: segs.at(-1).id };
+  }
+
+  /** Every chat that is in a thread but is not its head: the sidebar and search list the thread once, by its head. */
+  hidden() {
+    const out = new Set();
+    try {
+      const edges = this.#edges();
+      const seen = new Set();
+      for (const e of edges) {
+        if (seen.has(e.from)) continue;
+        const t = this.thread(e.from, edges);
+        for (const id of t?.ids ?? []) { seen.add(id); if (id !== t.head) out.add(id); }
+      }
+    } catch (err) { this.log(`handoff: ${err?.message ?? err}`); }
+    return out;
+  }
+
+  // The thread's sessions' events between `lo` and `hi`, in the order they ran, with a switch line between parts.
+  // `own`: the events of the session `sessionId`, already read. The rest are read here, once each.
+  async #compose(t, sessionId, own, { lo = -Infinity, hi = Infinity } = {}) {
+    const read = new Map(sessionId ? [[sessionId, own]] : []);
+    const times = new Map();
+    for (const s of t.segs) times.set(s.id, (times.get(s.id) ?? 0) + 1);
+    const out = [];
+    for (const [i, s] of t.segs.entries()) {
+      const e = i > 0 ? t.edges[i - 1] : null;
+      if (e && e.at >= lo && e.at < hi) out.push(switchLine(e));
+      const a = Math.max(s.from, lo), b = Math.min(s.until, hi);
+      if (a >= b) continue;
+      if (!read.has(s.id)) read.set(s.id, await Promise.resolve(this.historyOf(s.id, s.cwd)).catch(() => []));
+      const evs = Array.isArray(read.get(s.id)) ? read.get(s.id) : [];
+      // A session that ran once, read whole, is all its part: nothing is told apart by time.
+      const whole = times.get(s.id) === 1 && lo === -Infinity && hi === Infinity;
+      let at = -Infinity;
+      for (const ev of evs) {
+        if (!isPlain(ev) || ev.kind === 'earlier' || ev.kind === 'handoff') continue;
+        if (typeof ev.at === 'number' && Number.isFinite(ev.at)) at = ev.at;
+        if (whole || (at >= a && at < b)) out.push(ev);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * A move back to the session the other maker already has in this thread. `move`: { from, to, fromModel, toModel }
+   * (the session on screen, the one to go back to, the two names on screen). `about`: { cwd, busy, mode }.
+   * Resolves to { ok: true, text } with what that session is told when its next message goes (null: nothing
+   * happened while it was away), or { ok: false, message }. The link is saved at once. Going straight back from
+   * a session nothing was said in takes the switch back instead.
+   * @returns {Promise<{ ok: true, text: string | null } | { ok: false, message: string }>}
+   */
+  async back(move, about) {
+    try {
+      const from = str(move?.from), to = str(move?.to), cwd = str(about?.cwd);
+      if (!from || !to || !cwd) return { ok: false, message: MOVE_FAILED };
+      if (from === to) return { ok: true, text: null };
+      if (about?.busy) return { ok: false, message: MOVE_BUSY };
+      const t = this.thread(from);
+      if (!t || !t.ids.has(to)) return { ok: false, message: MOVE_FAILED };
+      const links = this.#links();
+      const last = t.edges.at(-1);
+      if (last && last.from === to && last.to === from) {
+        const own = await Promise.resolve(this.historyOf(from, cwd)).catch(() => []);
+        if (!(Array.isArray(own) ? own : []).some((e) => e?.kind === 'user-text' && Number(e.at) >= last.at)) {
+          const next = { ...links };
+          delete next[last.key];
+          this.save(next);
+          this.onChange();
+          return { ok: true, text: null };
+        }
+      }
+      // What happened since the session gone back to last ran.
+      const since = [...t.segs].reverse().find((s) => s.id === to)?.until ?? Infinity;
+      const events = await this.#compose(t, '', [], { lo: since });
+      let text = null;
+      if (events.some((e) => e?.kind === 'user-text' || e?.kind === 'assistant-text')) {
+        const git = await Promise.resolve(this.gitState(cwd)).catch(() => null);
+        const mode = SHARED_MODES.has(about?.mode) ? about.mode : 'default';
+        text = buildDigest(events, { fromModel: name(move?.fromModel, 80), cwd, mode, branch: git?.branch ?? null, status: git?.branch ? git.status ?? '' : null, back: true }, { redact: this.redact }).text;
+      }
+      const at = Math.max(this.now(), (last?.at ?? 0) + 1);
+      const fromSeg = t.segs.at(-1);
+      const toSeg = t.segs.find((s) => s.id === to);
+      const record = {
+        from: { id: from, engine: fromSeg?.engine ?? 'claude', title: '', model: name(move?.fromModel, 80) },
+        to: { id: to, engine: toSeg?.engine ?? 'claude', model: name(move?.toModel, 80) },
+        cwd, at, back: true,
+      };
+      const all = Object.entries({ ...links, [`back-${at.toString(36)}-${to.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)}`]: record })
+        .sort((a, b) => (a[1]?.at ?? 0) - (b[1]?.at ?? 0)).slice(-HANDOFF_LINKS_MAX);
+      this.save(Object.fromEntries(all));
+      this.onChange();
+      return { ok: true, text };
+    } catch (err) {
+      this.log(`handoff: ${err?.message ?? err}`);
+      return { ok: false, message: MOVE_FAILED };
+    }
+  }
+
   async #digest(key) {
     if (this.texts.has(key)) return this.texts.get(key);
     let text = '';
@@ -217,9 +379,13 @@ export class Handoffs {
   }
 
   /**
-   * A chat's history with its "Continued…" lines: a `handoff` event first for a chat that was moved into (saved, or
-   * still waiting for its first message: `sid`), and one last for each chat it was moved on to, oldest first.
-   * @param {{ sessionId?: string | null, sid?: string | null }} which
+   * A chat's history as its whole thread: each session's part in the order they ran, with a switch line
+   * ({ kind: 'handoff', dir: 'switch' }) where the maker changed. A chat moved here that has had no message yet
+   * (`sid`) is its old chat's thread with the switch at the end, marked `pending`. A chat that was never moved is
+   * its own events, as they are. A long chat read from its newest turns (led by `{ kind: 'earlier' }`) shows the
+   * thread from its first turn shown on, and its cursor says so (threadCursor); a page of earlier turns is given
+   * with `hi`, where the part already shown begins.
+   * @param {{ sessionId?: string | null, sid?: string | null, cwd?: string | null, hi?: number }} which
    * @param {object[]} events
    * @returns {Promise<object[]>}
    */
@@ -227,29 +393,39 @@ export class Handoffs {
     const list = Array.isArray(events) ? events : [];
     try {
       const sessionId = str(which?.sessionId);
-      const links = this.#links();
       const waiting = !sessionId && which?.sid ? this.pending.get(this.bySid.get(which.sid)) : null;
-      const rec = (sessionId && isPlain(links[sessionId]) ? links[sessionId] : null) ?? waiting?.record ?? null;
-      const out = [];
-      if (rec?.from?.id) {
-        const digest = waiting?.text ?? await this.#digest(rec.key);
-        out.push({
-          kind: 'handoff', dir: 'from', chat: { id: rec.from.id, title: rec.from.title || UNTITLED, cwd: rec.cwd, engine: engineName(rec.from.engine) },
-          model: str(rec.from.model), at: rec.at, digest, tokens: digest ? tokensOf(digest) : rec.tokens ?? 0,
-          file: existsSync(this.#file(rec.key)) ? this.#file(rec.key) : null, toModel: str(rec.to?.model), counts: rec.counts ?? null,
-        });
+      const base = sessionId || str(waiting?.record?.from?.id);
+      const t = base ? this.thread(base) : null;
+      let out = list;
+      if (t) {
+        const own = sessionId ? list : [];
+        const marker = own.find((e) => isPlain(e) && e.kind === 'earlier') ?? null;
+        const first = marker ? own.find((e) => isPlain(e) && e.kind !== 'earlier' && Number.isFinite(e.at))?.at : undefined;
+        const lo = Number.isFinite(first) ? first : -Infinity;
+        const hi = Number.isFinite(which?.hi) ? which.hi : Infinity;
+        out = await this.#compose(t, sessionId, own, { lo, hi });
+        if (marker) out.unshift({ ...marker, cursor: Number.isFinite(first) ? threadCursor(first, marker.cursor) : marker.cursor });
+      } else if (waiting) {
+        out = await Promise.resolve(this.historyOf(base, waiting.record.cwd)).catch(() => []);
+        out = Array.isArray(out) ? out : [];
       }
-      out.push(...list);
-      if (sessionId) {
-        const on = Object.entries(links).filter(([, r]) => isPlain(r) && r.from?.id === sessionId).sort((a, b) => (a[1].at ?? 0) - (b[1].at ?? 0));
-        for (const [id, r] of on) {
-          out.push({ kind: 'handoff', dir: 'to', chat: { id, title: r.from.title || UNTITLED, cwd: r.cwd, engine: engineName(r.to?.engine) }, model: str(r.to?.model), at: r.at });
-        }
-      }
+      if (waiting) out = [...out, switchLine({ from: base, to: '', at: waiting.record.at, r: waiting.record }, true)];
       return out;
     } catch (err) {
       this.log(`handoff: ${err?.message ?? err}`);
       return list;
     }
   }
+}
+
+// The line where a thread changed maker: "Canopy switched from <model> → <model>". `pending`: the chat switched to
+// has had no message yet (and has no id).
+function switchLine(e, pending = false) {
+  const r = e.r ?? {};
+  return {
+    kind: 'handoff', dir: 'switch', at: e.at,
+    from: { id: e.from, engine: engineName(r.from?.engine), model: str(r.from?.model) },
+    to: { id: e.to || null, engine: engineName(r.to?.engine), model: str(r.to?.model) },
+    ...(pending && { pending: true }),
+  };
 }

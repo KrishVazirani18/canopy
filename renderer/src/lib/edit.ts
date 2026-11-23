@@ -7,7 +7,8 @@ import type { Item, TaskInfo, ToolItem, UserItem } from './store';
 export const isCommandText = (text: string) => /^\s*(\/[\w:-]+(\s|$)|!)/.test(text);
 
 /** The conversation was summarized or cleared here: what is above it is no longer the conversation Claude Code holds. */
-export const isBoundary = (it: Item) => it.t === 'note' || (it.t === 'notice' && it.boundary === true);
+// A switch of maker is one too: what came before it was said to another session, which an edit here cannot reach.
+export const isBoundary = (it: Item) => it.t === 'note' || it.t === 'handoff' || (it.t === 'notice' && it.boundary === true);
 
 /** An item's place in the transcript: they are numbered as they arrive ("i12"). */
 export const itemNumber = (it: Item) => Number(it.key.slice(1)) || 0;

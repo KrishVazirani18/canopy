@@ -333,9 +333,9 @@ test('the three toasts are the same for both tools, with the name swapped', () =
   const updated = { kind: 'updated', from: '0.153.4', to: '0.167.2' };
   assert.deepEqual(W.upkeepToast('Codex', updated), { id: 'upkeep:codex', title: 'Codex updated to 0.167.2', description: 'New chats use it right away.', good: false });
   assert.deepEqual(W.upkeepToast('Codex', { ...updated, kind: 'repaired' }), { id: 'upkeep:codex', title: 'Codex updated to 0.167.2', description: 'It was too old for Canopy. Send your message again.', good: true });
-  assert.deepEqual(W.upkeepToast('Codex', { kind: 'drift', label: 'codex/item/hologram' }), { id: 'drift:codex:codex/item/hologram', title: 'Codex sent something new', description: 'Canopy skipped “codex/item/hologram” for now. It’s listed in Settings → Advanced.', good: false });
+  assert.equal(W.upkeepToast('Codex', { kind: 'drift', label: 'codex/item/hologram' }), null);
   // Claude Code's are id for id what they were, and each names the page its list is on.
   assert.deepEqual(W.upkeepToast('Claude Code', { kind: 'updated', from: '2.1.321', to: '2.1.322' }), { id: 'upkeep', title: 'Claude Code updated to 2.1.322', description: 'New chats use it right away.', good: false });
   assert.deepEqual(W.upkeepToast('Claude Code', { kind: 'repaired', from: '2.1.321', to: '2.1.322' }), { id: 'upkeep', title: 'Claude Code updated to 2.1.322', description: 'It was too old for Canopy. Send your message again.', good: true });
-  assert.deepEqual(W.upkeepToast('Claude Code', { kind: 'drift', label: 'system/new_thing' }), { id: 'drift:system/new_thing', title: 'Claude Code sent something new', description: 'Canopy skipped “system/new_thing” for now. It’s listed in Settings → Advanced.', good: false });
+  assert.equal(W.upkeepToast('Claude Code', { kind: 'drift', label: 'system/new_thing' }), null);
 });

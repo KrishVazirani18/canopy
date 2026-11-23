@@ -243,8 +243,9 @@ export class Session extends EventEmitter {
     if (this.sessionId && typeof startedWith?.codeMode === 'boolean') { this.settings.codeMode = startedWith.codeMode; this.toolsFixed = true; }
     this.title = typeof title === 'string' ? title : undefined;
     // A chat moved here from the other maker: the old chat's digest (handoff.mjs), and `by`, the send that carries
-    // it. A chat that already exists has had its digest, so a resumed one never carries.
-    this.handoff = !this.sessionId && isPlain(handoff) && typeof handoff.text === 'string' && handoff.text ? { text: handoff.text, by: null } : null;
+    // it. A chat that already exists has had its digest, so a resumed one never carries, unless it is being gone back
+    // to (`back`): then the digest is what happened while it was away (see handBack()).
+    this.handoff = (!this.sessionId || handoff?.back === true) && isPlain(handoff) && typeof handoff.text === 'string' && handoff.text ? { text: handoff.text, by: null, back: handoff.back === true } : null;
     this.trusted = trusted === true ? true : trusted === false ? false : undefined;
     // Folders the host app counts as trusted (Canopy: the folders you opened as projects), as a list or a getter read
     // at each start. A chat in one of them, below it or in a worktree of it is trusted, as trust.mjs decides for 'host'.
@@ -423,9 +424,16 @@ export class Session extends EventEmitter {
   // other send carries it already. Null otherwise.
   takeLead(id, again = false) {
     const h = this.handoff;
-    if (!h || (!again && (h.by || this.sessionId))) return null;
+    if (!h || (!again && (h.by || (this.sessionId && !h.back)))) return null;
     h.by = id;
     return forClaude(h.text);
+  }
+
+  /** The chat was gone back to from the other maker: `text` (a digest, handoff.mjs) goes with its next message. */
+  handBack(text) {
+    if (this.closed || typeof text !== 'string' || !text) return false;
+    this.handoff = { text, by: null, back: true };
+    return true;
   }
 
   // The send that carried the digest ended without ever starting (stopped, failed): the next message carries it.

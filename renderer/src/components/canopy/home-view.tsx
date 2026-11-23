@@ -2,7 +2,7 @@
 // The board reads left to right: Needs you (answer right on the card), Working (what each chat is doing now), Done today
 // (what you got: an answer, changed files, a pull request). Docked under it is today, like GitHub's contribution graph
 // for one day: a row of quarter hours, darker where Claude worked more, under a sentence with the day's working time
-// and cost.
+// and what it used: how full the plan is on a subscription, dollars only for accounts billed per use.
 // Colour is state, never decoration: amber = needs you, green = finished or now, everything else is grey.
 // The three columns are always there, side by side; an empty one rests with a quiet line in its own space.
 import { workflowProgress } from '@/lib/workflow-progress';
@@ -14,6 +14,8 @@ import { chats as chatStatus, useChatStatus } from '@/lib/chats';
 import { homeAvailable, homeRespond, homeStop, homeStopTasks, useHome, useHomeDay, type HomeAsk, type HomeChat } from '@/lib/home';
 import { useStore } from '@/lib/store';
 import { useMarkedUnread } from '@/lib/unread';
+import { useUsage, watchUsage } from '@/lib/usage';
+import { dayUse, planText } from '@/lib/usage-rules';
 import { ui } from '@/lib/ui';
 import { cn } from '@/lib/utils';
 import { projectName } from '@/lib/project-name';
@@ -340,6 +342,12 @@ const hourName = (h: number) => (h % 24 === 0 ? '12 AM' : h === 12 ? 'Noon' : h 
  *  Back to now, and it's live again. */
 function Today({ day: got, now, scrub, onScrub }: { day: HomeDay | null | false; now: number; scrub: number | null; onScrub: (t: number | null) => void }) {
   const day = got || null;
+  // What the day used up. On a plan that is how full the plan is, never dollars: its chats are not charged one by one,
+  // and an API-price figure for them reads like a bill. Dollars only for accounts billed per use.
+  useEffect(() => watchUsage(), []);
+  const use = dayUse(useUsage()?.sections);
+  const plan = planText(use.plans);
+  const spent = use.dollars ? day?.cost ?? 0 : use.spend;
   const since = day?.since ?? startOfToday(), len = day?.slot ?? 15 * MIN;
   const count = day?.slots.length ?? 96, span = count * len;
   const grid = useRef<HTMLDivElement>(null);
@@ -362,7 +370,7 @@ function Today({ day: got, now, scrub, onScrub }: { day: HomeDay | null | false;
   const a = since + i * len, s = day?.slots[i];
   const label = i < 0 || !day ? null
     : a > now ? 'Later today'
-      : <>{dragging ? clock(scrub ?? now) : `${clock(a)} – ${clock(Math.min(a + len, now))}`}<span className="text-faint tabular-nums">{s?.busy ? `Canopy worked ${lasted(s.busy)}${s.chats > 1 ? ` in ${s.chats} chats` : ''}, ${money(s.cost)}` : 'Nothing'}</span></>;
+      : <>{dragging ? clock(scrub ?? now) : `${clock(a)} – ${clock(Math.min(a + len, now))}`}<span className="text-faint tabular-nums">{s?.busy ? `Canopy worked ${lasted(s.busy)}${s.chats > 1 ? ` in ${s.chats} chats` : ''}${use.dollars ? `, ${money(s.cost)}` : ''}` : 'Nothing'}</span></>;
   return (
     <div className="sticky bottom-0 z-10 shrink-0 border-t border-hairline bg-background before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:mb-px before:h-8 before:bg-gradient-to-t before:from-background before:to-transparent">
       <div className="mx-auto w-full max-w-[1160px] px-6 pt-3 pb-4 @[760px]:px-10">
@@ -373,7 +381,9 @@ function Today({ day: got, now, scrub, onScrub }: { day: HomeDay | null | false;
           <p className="min-w-0 flex-1 truncate text-ui text-muted-foreground tabular-nums">
             {got === false ? 'Restart Canopy to see today here.' : !day ? ''
               : !day.busy ? 'Canopy hasn’t worked yet today.'
-                : <>Canopy worked <span className="font-medium text-foreground">{lasted(day.busy)}</span> across {day.chats} {day.chats === 1 ? 'chat' : 'chats'}. It cost <span className="font-medium text-foreground">{money(day.cost)}</span>.</>}
+                : <>Canopy worked <span className="font-medium text-foreground">{lasted(day.busy)}</span> across {day.chats} {day.chats === 1 ? 'chat' : 'chats'}.
+                  {plan && <> {plan.split(/(\d+%|<1%)/).map((x, k) => (k % 2 ? <span key={k} className="font-medium text-foreground">{x}</span> : x))}{spent ? ', and' : '.'}</>}
+                  {spent ? <>{plan ? ' ' : ' It cost '}<span className="font-medium text-foreground">{money(spent)}</span>{plan ? ' was billed per use.' : '.'}</> : null}</>}
           </p>
           {scrub != null
             ? <button type="button" onClick={() => onScrub(null)} className="h-6 shrink-0 self-center rounded-md px-2 text-small text-muted-foreground hover:bg-accent hover:text-foreground">Back to now</button>

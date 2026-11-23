@@ -26,13 +26,24 @@ export function readUsage(open = false): Promise<void> {
   return api.usage?.get({ open }).then(set).catch(() => {}) ?? Promise.resolve();
 }
 
-/** The tab is on screen: ask now, keep asking, and follow what main sends. Call what it returns when the tab goes
- *  away (closed, another tab, the window hidden): main then reads nothing more. */
+/** Something that shows usage is on screen (the Usage tab, Home's Today line): ask now, keep asking, and follow what
+ *  main sends. Call what it returns when it goes away. Several may watch at once; main is told to stop reading only
+ *  when the last one has gone. */
+let watchers = 0;
+let stopWatching: (() => void) | null = null;
 export function watchUsage(): () => void {
-  const off = api.usage?.onChanged(set) ?? (() => {});
+  if (watchers++ === 0) {
+    const off = api.usage?.onChanged(set) ?? (() => {});
+    const timer = setInterval(() => { readUsage(); }, ASK_EVERY_MS);
+    stopWatching = () => { clearInterval(timer); off(); api.usage?.watch(false).catch(() => {}); };
+  }
   readUsage(true);
-  const timer = setInterval(() => { readUsage(); }, ASK_EVERY_MS);
-  return () => { clearInterval(timer); off(); api.usage?.watch(false).catch(() => {}); };
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    if (--watchers === 0) { stopWatching?.(); stopWatching = null; }
+  };
 }
 
 /** "Updated…" or Try Again was clicked: read now. */

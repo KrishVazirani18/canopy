@@ -30,7 +30,7 @@ import { choices } from '@/lib/choices';
 import { reorderAs } from '@/lib/chat-order';
 import { applyChoices, expectedEngine, rememberEngines, startModels } from '@/lib/engines';
 import { startReleases } from '@/lib/releases';
-import type { Move } from '@/lib/move';
+import type { Back, Move } from '@/lib/move';
 import { repin } from '@/lib/pins';
 import { startSignIn } from '@/lib/signin';
 import { isContent, store, useStore, type HandoffItem } from '@/lib/store';
@@ -227,7 +227,7 @@ export default function App() {
   // `swap`: the other maker's model was picked, so main may let go of the chat that was on screen if it was never used.
   // `move`: it was picked in a started chat, so the new chat carries on from that one (lib/move.ts). The chat you are
   // in stays on screen until the new one is ready, and stays for good if the move is refused.
-  const openSession = useCallback(async (dir: string, resumeId: string | null, opts: { force?: boolean; swap?: boolean; move?: Move; stay?: boolean } = {}) => {
+  const openSession = useCallback(async (dir: string, resumeId: string | null, opts: { force?: boolean; swap?: boolean; move?: Move; back?: Back; stay?: boolean } = {}) => {
     // Opening any chat leaves Home, at the moment the chat is in place (never via the chat you were in before), except
     // the one opened at launch (`stay`): it waits behind Home, which every launch opens on.
     const toChat = () => { if (!opts.stay && ui.get().view !== 'chat') ui.set({ view: 'chat' }); };
@@ -274,13 +274,15 @@ export default function App() {
     };
     const slow = resumeId ? setTimeout(() => { if (here.current === mine) enter(true); }, 220) : undefined;
     if (!resumeId && !opts.move) enter(true);
-    const ask: OpenOpts = { ...(!resumeId && asked === 'codex' && { engine: asked }), ...(opts.swap && { replaceEmpty: true }), ...(!resumeId && opts.move && { move: opts.move }) };
+    const switched = opts.move ?? opts.back; // the other maker's model was picked in a started chat
+    const back = resumeId && opts.back && opts.back.from !== resumeId ? { from: opts.back.from, fromModel: opts.back.fromModel, toModel: opts.back.toModel } : undefined;
+    const ask: OpenOpts = { ...(!resumeId && asked === 'codex' && { engine: asked }), ...(opts.swap && { replaceEmpty: true }), ...(!resumeId && opts.move && { move: opts.move }), ...(back && { back }) };
     let r: Awaited<ReturnType<typeof api.open>>;
     try { r = await api.open(dir, resumeId, Object.keys(ask).length ? ask : undefined); } catch (err) { r = { error: String((err as Error)?.message ?? err) }; }
     clearTimeout(slow);
     if (here.current !== mine) return; // another chat was opened while this one loaded: the screen is its now
     setOpening(null);
-    if (r?.error && opts.move) {
+    if (r?.error && switched) {
       // The move was refused (the chat started working meanwhile): nothing was opened, and you are still in the chat
       // you were in. What it said while this was asked is played now.
       here.current = at;
@@ -295,16 +297,22 @@ export default function App() {
     heldChats.note(resumeId, r.held); // open in another app: said at once, in place of the message box
     // Still running from before (maybe mid-reply): pick it up exactly where it is, with its own settings.
     const live = (r as { reused?: boolean; live?: LiveSession }).reused ? (r as { live?: LiveSession }).live : undefined;
-    if (live) { toChat(); reattach({ ...live, sid: sid ?? undefined, engine: r.engine ?? live.engine }, asked); return; }
+    if (live) {
+      toChat(); reattach({ ...live, sid: sid ?? undefined, engine: r.engine ?? live.engine }, asked);
+      // Gone back to a session still open: it takes the model you picked, as a new chat would.
+      if (opts.back) { applyChoices(store, r.engine ?? live.engine, r.defaults?.mode, null); window.dispatchEvent(new Event('canopy:moved')); }
+      return;
+    }
     enter(true);
     store.setMeta({ sessionId: resumeId, mode: choices.mode ?? r.defaults?.mode ?? null, accountId: r.accountId });
     ctxFromBefore(resumeId);
-    applyChoices(store, r.engine, r.defaults?.mode, resumeId ? r.history ?? [] : null); // your choices for the maker the chat really runs on
+    // Your choices for the maker the chat really runs on. A chat gone back to takes the model you just picked.
+    applyChoices(store, r.engine, r.defaults?.mode, resumeId && !opts.back ? r.history ?? [] : null);
     store.loadHistory(r.history ?? []);
     store.setMeta({ loading: false }); // only after the conversation is in place: no empty-screen flash
     release(sid); // what the chat said while it opened (its start-up notices) goes after its history
     fetchCtx(8);
-    if (opts.move) window.dispatchEvent(new Event('canopy:moved')); // what you had typed follows you (lib/move.ts)
+    if (switched) window.dispatchEvent(new Event('canopy:moved')); // what you had typed follows you (lib/move.ts)
   }, []);
 
   const reattach = useCallback((live: LiveSession, asked: Engine = live.engine ?? 'claude') => {
@@ -458,11 +466,17 @@ export default function App() {
   }, [cwd, chatsDir, refresh, openSession]);
 
   // The other maker's model was picked (controls.tsx): a chat of that maker, here. A chat that had not started is
-  // swapped where it stands, so nothing changes but the chip. A started one is moved (`move`): it stays in the
-  // sidebar as it was, and you are in a new chat that carries on from it. In Multi mode the pane you are in does the
-  // same (multi-view.tsx).
+  // swapped where it stands, so nothing changes but the chip. A started one is moved: on screen it stays the same chat
+  // (one row, one transcript), carried on by a new session of that maker (`move`), or by the one that maker already
+  // has in it (`back`). In Multi mode the pane you are in does the same (multi-view.tsx).
   useEffect(() => {
-    const on = (e: Event) => { if (!inMulti() && cwd) openSession(cwd, null, { force: true, swap: true, move: (e as CustomEvent<{ move?: Move } | undefined>).detail?.move }); };
+    const on = (e: Event) => {
+      if (inMulti() || !cwd) return;
+      const d = (e as CustomEvent<{ move?: Move; back?: Back } | undefined>).detail;
+      // Back to the session that maker already has in this chat's thread, else a new chat that carries on.
+      if (d?.back) openSession(cwd, d.back.to, { force: true, swap: true, back: d.back });
+      else openSession(cwd, null, { force: true, swap: true, move: d?.move });
+    };
     window.addEventListener('canopy:other-maker', on);
     return () => window.removeEventListener('canopy:other-maker', on);
   }, [cwd, openSession]);

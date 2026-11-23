@@ -87,6 +87,25 @@ test('a resumed chat never carries one', async () => {
   assert.equal(contentOf(fake.current, 0), 'hello again');
 });
 
+test('a resumed chat gone back to carries what happened while it was away, once: given at the start or later', async () => {
+  const RESUME = '6f1c2c1e-7f0a-4c57-9d49-0d6a8f1f2b11';
+  const { s, fake, w } = make({ resume: RESUME, handoff: { text: DIGEST, back: true } });
+  s.send('hello again');
+  await idle(w);
+  assert.deepEqual(contentOf(fake.current, 0), [LEAD, { type: 'text', text: 'hello again' }]);
+  let from = w.mark();
+  s.send('and then');
+  await idle(w, from);
+  assert.equal(contentOf(fake.current, 1), 'and then');
+  // Gone away and back again while it stays open: told again, with the next message only.
+  assert.equal(s.handBack(DIGEST), true);
+  from = w.mark();
+  s.send('back once more');
+  await idle(w, from);
+  assert.deepEqual(contentOf(fake.current, 2), [LEAD, { type: 'text', text: 'back once more' }]);
+  assert.equal(s.handBack(''), false, 'nothing to tell is not a handback');
+});
+
 test('two messages sent before the chat has started: only the first carries the block', async () => {
   const { s, fake, w } = make({ handoff: { text: DIGEST } });
   s.send('one');

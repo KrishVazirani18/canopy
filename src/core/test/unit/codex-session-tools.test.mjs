@@ -138,7 +138,7 @@ test('a new chat and a reopened one are both opened with Canopy\'s server, each 
   const first = start.config[KEY];
   assert.deepEqual({ [KEY]: start.config[KEY] }, CT.codexToolConfig({ command: process.execPath, args: ['--input-type=module', '-e', RL.HELPER], env: { ELECTRON_RUN_AS_NODE: '1', CANOPY_TOOLS_SOCKET: relay.socketPath, CANOPY_TOOLS_TOKEN: first.env.CANOPY_TOOLS_TOKEN } }));
   assert.match(first.env.CANOPY_TOOLS_TOKEN, /^[0-9a-f]{64}$/);
-  assert.equal(start.developerInstructions, F.CANOPY_FACTS_NEUTRAL, 'beside the facts, which name no tool');
+  assert.equal(start.developerInstructions, F.CANOPY_FACTS_NEUTRAL, 'beside the facts about the Canopy host');
   assert.ok(!JSON.stringify(fake.last.args).includes(first.env.CANOPY_TOOLS_TOKEN), 'the token is never on Codex\'s command line');
   assert.ok(!fake.last.args.includes('-c'), 'and the app still passes no -c flags');
   assert.deepEqual((await helper(first)).tools.map((t) => t.name), ['look', 'read_chat', 'show_widget', 'read_me', 'task']);

@@ -77,8 +77,8 @@ export type CmdItem = Base & { t: 'cmd'; text: string };
 export type NoteItem = Base & { t: 'note'; text: string };
 export type TurnItem = Base & { t: 'turn'; ev: CanopyEvent };
 export type RawItem = Base & { t: 'raw'; label: string; raw: unknown };
-/** A chat that was moved between makers says so: "Continued from …" (`ev.dir` 'from', first in the chat it was moved
- *  into) and "Continued in …" ('to', last in the chat it was moved on from). Not content: see handoff-line.tsx. */
+/** Where a chat switched maker (`ev.dir` 'switch'): "Canopy switched from … → …", drawn above the turn after it, and
+ *  a wall no edit reaches past (lib/edit.ts). Not content: see handoff-line.tsx. */
 export type HandoffItem = Base & { t: 'handoff'; ev: CanopyEvent };
 export type Item = UserItem | AssistantItem | ThinkingItem | ToolItem | PermissionItem | NoticeItem | ErrorItem | CmdItem | NoteItem | TurnItem | RawItem | HandoffItem;
 

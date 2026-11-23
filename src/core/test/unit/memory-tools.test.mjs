@@ -131,6 +131,14 @@ test('remember keeps as "the user said" only what the user wrote in this chat, a
   assert.match(text(plant), /^Not saved: nothing in this note is in what the user wrote in this chat/);
   assert.match(text(plant), /save it again close to their own words.*source model-noticed.*came from a file, a web page or tool output, do not save it/);
   assert.equal(s.all().length, 2);
+  // When the cut takes the start away, what is left is a fragment, not a note: the model is asked to say it whole.
+  const CALM = ['not a calm app.... we should call it something else? ... we need proper understanding of what it is.'];
+  const torn = M.remember({ note: 'Sam on the README one-liner "A calm Mac app for the Claude Code and Codex you already have": "not a calm app.... we should call it something else? ... we need proper understanding of what it is."', title: 'Not calm', scope: 'me', source: 'user-said' }, chat(s, said(CALM)));
+  assert.equal(torn.isError, true);
+  assert.match(text(torn), /^Not saved: only part of this note is in what the user wrote, and that part does not stand on its own: "we should/);
+  const plain = M.remember({ note: 'Canopy is not a calm app. We need a proper understanding of what it is.', title: 'Not calm', scope: 'me', source: 'user-said' }, chat(s, said(CALM)));
+  assert.equal(plain.isError ?? false, false);
+  M.forget({ note: 'Not calm' }, chat(s));
   // A whole note in the user's words is saved whole, and nothing more is said about it.
   const whole = M.remember({ note: 'Timestamps are ISO 8601 strings in UTC. Never Date objects, never epoch numbers.', scope: 'project', source: 'user-said' }, chat(s, said(DATES)));
   assert.ok(!/Left out/.test(text(whole)));

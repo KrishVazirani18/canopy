@@ -29,12 +29,14 @@ import {
   useRef,
   useState,
 } from "react";
-import { Streamdown, defaultComponents, type Components, type LinkSafetyModalProps } from "streamdown";
+import { Streamdown, defaultComponents, defaultRemarkPlugins, type Components, type LinkSafetyModalProps } from "streamdown";
 import { RunnableCode, RunnableReplies, SHELL_LANGS } from "@/components/canopy/run-block";
 import { plainCommand } from "@/lib/run-report";
 import { LinkConfirm, opensTrusted } from "@/components/canopy/link-confirm";
 import { ReplySources, splitSources } from "@/components/canopy/reply-sources";
 import { normalizeMath } from "@/lib/math-delimiters";
+import { openReplyPath } from "@/lib/rich-reply";
+import { absoluteReplyPath, remarkVisualizeReferences } from "@/lib/visualize-reference";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -350,7 +352,24 @@ function Code(props: Record<string, unknown> & { className?: string; children?: 
   const line = /startLine=(\d+)/.exec(props.node?.properties?.metastring ?? "")?.[1];
   return <RunnableCode code={code} command={command} language={language} startLine={line ? Number(line) : undefined} />;
 }
-const COMPONENTS: Components = { code: Code as Components["code"] };
+const DefaultLink = defaultComponents.a;
+function ReplyLink(props: ComponentProps<typeof DefaultLink>) {
+  const { children, href } = props;
+  if (href && absoluteReplyPath(href)) {
+    let path = '';
+    try { path = decodeURIComponent(href); } catch { /* Invalid URL escape. */ }
+    if (absoluteReplyPath(path)) {
+      return <a href={href} title="⌥-click to show in Finder" onClick={(e) => {
+        e.preventDefault();
+        void openReplyPath(path, e.altKey);
+      }} onAuxClick={(e) => e.preventDefault()}>{children}</a>;
+    }
+  }
+  return <DefaultLink {...props} />;
+}
+const COMPONENTS: Components = { code: Code as Components["code"], a: ReplyLink };
+const SOURCE_COMPONENTS: Components = { a: ReplyLink };
+const REMARK_PLUGINS = [...Object.values(defaultRemarkPlugins), remarkVisualizeReferences];
 // Links ask first in Canopy's own dialog; sites you've chosen to trust open straight away.
 const LINK_SAFETY = { enabled: true, onLinkCheck: opensTrusted, renderModal: (p: LinkSafetyModalProps) => <LinkConfirm {...p} /> };
 
@@ -399,6 +418,7 @@ export const MessageResponse = memo(
             className
           )}
           plugins={streamdownPlugins}
+          remarkPlugins={REMARK_PLUGINS}
           linkSafety={LINK_SAFETY}
           components={COMPONENTS}
           {...props}
@@ -408,7 +428,7 @@ export const MessageResponse = memo(
           <ReplySources
             items={split.items}
             render={(md) => (
-              <Streamdown className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0" linkSafety={LINK_SAFETY}>
+              <Streamdown className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0" linkSafety={LINK_SAFETY} components={SOURCE_COMPONENTS}>
                 {md}
               </Streamdown>
             )}

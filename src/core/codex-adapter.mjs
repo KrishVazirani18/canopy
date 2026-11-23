@@ -102,7 +102,7 @@ const CHATTER = [/^Skill descriptions were shortened/i];
 // (thread status, settings echoes, MCP start-up, resolved requests) from the raw line.
 const SILENT = new Set([
   'thread/started', 'thread/status/changed', 'thread/archived', 'thread/deleted', 'thread/unarchived', 'thread/closed',
-  'thread/reverted', 'thread/name/updated', 'thread/goal/updated', 'thread/goal/cleared', 'thread/queue/changed',
+  'thread/reverted', 'thread/name/updated', 'thread/readState/changed', 'thread/goal/updated', 'thread/goal/cleared', 'thread/queue/changed',
   'thread/project/updated', 'thread/environment/connected', 'thread/environment/disconnected', 'thread/settings/updated',
   'thread/tokenUsage/updated', 'project/changed', 'skills/changed', 'turn/diff/updated', 'turn/moderationMetadata',
   'item/autoApprovalReview/started', 'item/autoApprovalReview/completed', 'autoApprovalReview/strictReviewRequired',
