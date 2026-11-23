@@ -154,6 +154,9 @@ contextBridge.exposeInMainWorld('canopy', {
     noticeUp: () => ipcRenderer.invoke('telemetry:notice-up'),     // the first-launch notice is on screen now
     onStatus: on('telemetry:status'),
   },
+  backgroundChrome: process.platform === 'darwin' ? {
+    openSettings: () => ipcRenderer.invoke('background-chrome:settings'),
+  } : undefined,
   // What Codex needs before it can use the Mac (src/computer-use.mjs): Settings → Codex, and a failed step's fix.
   computerUse: {
     status: () => ipcRenderer.invoke('computer-use:status'),

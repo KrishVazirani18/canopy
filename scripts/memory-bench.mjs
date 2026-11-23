@@ -324,6 +324,13 @@ const CHATS = [
   // Two more corrections, each with room for a rule of the model's own (how it fixed the code, how it will answer).
   { id: 'c21-correction-dates', kind: 'shop', expect: 1, prompts: ['Give each item that addItem() pushes into the cart an `addedAt` timestamp.', 'A correction that holds for this whole codebase: timestamps are ISO 8601 strings in UTC. Never Date objects, never epoch numbers. Fix it.'] },
   { id: 'c22-correction-answers', kind: 'plain', expect: 1, prompts: ['What does `git rebase --onto` do?', 'Too long. From now on, when I ask what a command does, answer in two sentences at most, and skip the examples unless I ask for them.'] },
+  // The shapes real notes went wrong in (Nov 23): a permission for one job, a call's recap, the story of a
+  // mistake, a note that reports who said it, and a preference whose subject was said a turn before.
+  { id: 'c23-task-permission', kind: 'plain', expect: 0, prompts: ['For rating these sites you can send Google imagery to the agents, that\'s okay. Include owners if you need. First, what would you look at in a satellite image of a parking lot to judge if a small building fits?'] },
+  { id: 'c24-call-recap', kind: 'plain', expect: 1, prompts: ['Notes from today\'s call with Dana about the store dashboard: she wants it to rank our stores from best to worst, each with a yes/no on parking, a 1 to 5 for foot traffic, and whether it can open late. Keep it simple. Austin first, then Denver. Put what she wants in 3 bullets.'] },
+  { id: 'c25-mistake', kind: 'shop', expect: 1, prompts: ['Run the tests and tell me if they pass.', 'You ran the e2e tests too, and those hit the real network. Here, only ever run test/unit unless I ask for e2e.'] },
+  { id: 'c26-named-user', kind: 'plain', expect: 1, prompts: ['I\'m Sam. In every repo of mine, commit messages are all lowercase. Write me a commit message for adding a login page.'] },
+  { id: 'c27-subject-before', kind: 'shop', expect: 1, prompts: ['We\'re adding a dark mode to this shop\'s storefront soon. What would you change in the CSS first? Answer in a few lines, no code.', 'I want every user to have it, on by default, not behind a setting.'] },
   // Things said for now, not for good: none is a lasting preference, so none should be kept.
   { id: 'c17-this-task-only', kind: 'shop', expect: 0, prompts: ['Add a count(cart) function that returns the number of distinct items. For this change only, skip writing a test, I will add one myself later.'] },
   { id: 'c18-for-now', kind: 'shop', expect: 0, prompts: ['Just use npm for now to run things here, until I get pnpm fixed on this laptop. What command runs the unit tests?'] },

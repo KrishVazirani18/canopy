@@ -12,7 +12,7 @@ Three files on a GitHub release of `KrishVazirani18/canopy`:
 | `Canopy-<version>-mac.zip` | A running Canopy, to update itself. |
 | `latest.json` | A running Canopy, to find out there is an update: the version, the zip's address, size and SHA-256, and the oldest version still allowed to run. |
 
-Every Canopy checks `latest.json` a minute after it opens and every four hours. It downloads a newer version in the background, checks it, and installs it when the person presses "Restart to update" or next quits. It never restarts while a chat is working.
+Every Canopy checks `latest.json` a minute after it opens, every hour, and when the Mac wakes or its window comes back to the front (at most every half hour). It downloads a newer version in the background, checks it, and installs it when the person presses "Restart to update" or next quits. It never restarts while a chat is working.
 
 The app runs on Apple silicon and Intel Macs (one universal build), macOS 13 or newer.
 
@@ -56,7 +56,7 @@ Three things worth knowing:
 
 Canopy only ever moves forward: it installs a version newer than the one it has. So the fix for a bad release is a newer good one.
 
-**First, stop more people getting it** (takes effect within four hours, as each Canopy next checks):
+**First, stop more people getting it** (takes effect within the hour, as each Canopy next checks):
 
 ```
 gh release edit v0.1.2 --repo KrishVazirani18/canopy --prerelease

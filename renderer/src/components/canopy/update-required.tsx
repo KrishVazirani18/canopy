@@ -5,7 +5,8 @@
 // update cannot be downloaded or installed, "Not now" lets Canopy be used all the same.
 //
 // Laid out like Canopy's other full-window stops (App.tsx: Install Claude Code, Canopy couldn't start): the mark, a
-// title, a line or two, one wide button, and a line under it that always takes its space so nothing shifts.
+// title, a line or two, one button. Under it, room kept for what is going on and, only when the update cannot be had,
+// "Not now", so nothing shifts.
 import { useState } from 'react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import { Button } from '@/components/ui/button';
@@ -38,22 +39,20 @@ export function UpdateRequired() {
         <DialogPrimitive.Content data-update-required aria-describedby="update-required-message"
           onEscapeKeyDown={(e) => e.preventDefault()} onPointerDownOutside={(e) => e.preventDefault()} onInteractOutside={(e) => e.preventDefault()}
           className="fixed inset-0 z-[100] flex flex-col bg-background outline-none enter-fade">
-          <div className="h-11 shrink-0 border-b bg-sidebar [-webkit-app-region:drag]" />
+          <div className="h-11 shrink-0 [-webkit-app-region:drag]" />
           <div className="flex flex-1 items-center justify-center p-6 pb-24">
-            <div className="w-full max-w-sm text-center">
-              <Logo className="mx-auto mb-6 size-12 text-brand" />
-              <DialogPrimitive.Title className="mb-2 text-display">Update required</DialogPrimitive.Title>
+            <div className="flex w-full max-w-md flex-col items-center text-center">
+              <Logo className="mb-5 size-10 text-brand" />
+              <DialogPrimitive.Title className="mb-1.5 text-display">Update required</DialogPrimitive.Title>
               <p id="update-required-message" className="text-ui text-muted-foreground">{view.message}</p>
-              <Button autoFocus size="lg" aria-disabled={view.busy || undefined} className="mt-8 w-full aria-disabled:pointer-events-none aria-disabled:opacity-60"
+              <Button autoFocus aria-disabled={view.busy || undefined} className="mt-6 min-w-36 aria-disabled:pointer-events-none aria-disabled:opacity-60"
                 onClick={() => { if (!view.busy) go(); }}>
                 {view.busy && <Spinner className="size-4" />}{view.button}
               </Button>
-              {/* Always takes its line, so nothing shifts when words appear. */}
-              <p role="status" className="mt-3 h-5 text-ui text-muted-foreground">{view.line && <span className="enter-fade">{view.line}</span>}</p>
-              <p className="mt-6 h-5 text-small text-faint">
-                {view.escape
-                  ? <button type="button" onClick={later} className="rounded text-muted-foreground underline decoration-foreground/20 underline-offset-[0.18em] hover:text-foreground hover:decoration-foreground/60">Not now</button>
-                  : <span>Canopy {status.current} to {required.version}</span>}
+              {/* Both lines always take their space, so nothing shifts when words appear. */}
+              <p role="status" className="mt-3 h-5 text-small text-muted-foreground">{view.line && <span className="enter-fade">{view.line}</span>}</p>
+              <p className="mt-1 h-5 text-small">
+                {view.escape && <button type="button" onClick={later} className="enter-fade rounded text-muted-foreground hover:text-foreground">Not now</button>}
               </p>
             </div>
           </div>

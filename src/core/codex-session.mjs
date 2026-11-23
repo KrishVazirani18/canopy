@@ -62,6 +62,7 @@ export const SKILL_TOKENS = 4000;
 import { forCodex, isHandoffText } from './handoff.mjs';
 import { NoteQueue, escapeNoteTag, isNoteText, noteForCodex } from './notes.mjs';
 import { CANOPY_SERVER } from './tool-registry.mjs';
+import { CHROME_SERVER, backgroundChromeConfig } from './background-chrome.mjs';
 import { canopyMemoryNote, claudeMemoryNote } from './memory.mjs';
 import { toolIcons } from './tool-icons.mjs';
 
@@ -242,11 +243,13 @@ export class CodexSession extends EventEmitter {
     cwd, codexPath, env, resume = null, model, permissionMode, effort, fast,
     allowBypass = false, extended = false, debug = false, autoRestart = true, appVersion = '0.0.1', title,
     config, flags, spawnFn = spawn, timeouts, log, onDrift, onRateLimits, onAccountUpdated, adapter, handoff, tools, look, shots, otherChats, widgetReport, canopyPlugin, canopyKit, memory, memoryBridge = false,
-    account = null, launch, accountNotice, heldElsewhere,
+    account = null, launch, accountNotice, heldElsewhere, chrome,
   } = {}) {
     super();
     this.engine = 'codex';
     this.cwd = cwd;
+    this.chrome = chrome;
+    this.chromeNameTaken = undefined;
     this.codexPath = codexPath;
     this.env = env;
     this.accountId = typeof account === 'string' && account ? account : null;
@@ -1679,7 +1682,11 @@ export class CodexSession extends EventEmitter {
     try {
       const r = await proc.request('config/read', { includeLayers: false, cwd: this.cwd }, { timeoutMs: this.t.meta });
       if (this.ownNote === undefined && isPlain(r?.config)) this.ownNote = typeof r.config.developer_instructions === 'string' && r.config.developer_instructions.trim() ? r.config.developer_instructions : null;
-      if (isPlain(r?.config)) this.nameTaken = isPlain(r.config.mcp_servers) && Object.hasOwn(r.config.mcp_servers, CANOPY_SERVER);
+      if (isPlain(r?.config)) {
+        const servers = isPlain(r.config.mcp_servers) ? r.config.mcp_servers : {};
+        this.nameTaken = Object.hasOwn(servers, CANOPY_SERVER);
+        this.chromeNameTaken = Object.hasOwn(servers, CHROME_SERVER);
+      }
       if (isPlain(r?.config)) this.askTools = promptTools(r.config.mcp_servers);
       if (isPlain(r?.config)) this.ownSkillCap = r.config.skills?.max_context_tokens !== undefined && r.config.skills?.max_context_tokens !== null;
       const own = r?.config?.sandbox_workspace_write;
@@ -2126,13 +2133,15 @@ export class CodexSession extends EventEmitter {
     const tier = this.tierFor();
     const note = this.developerNote();
     const own = await this.linkTools(proc);
+    const chrome = this.chromeNameTaken === false ? backgroundChromeConfig(this.chrome) : {};
+    const config = { ...this.skillCap(), ...own, ...chrome };
     if (this.closed || this.proc !== proc) return;
     const common = {
       cwd: this.cwd, approvalPolicy: w.approvalPolicy, approvalsReviewer: w.reviewer, sandbox: w.sandbox,
       ...(s.model && { model: s.model }), ...(tier !== undefined && { serviceTier: tier }),
       ...(note && { developerInstructions: note }),
       // The thread's own settings (never the process's flags): Canopy's tools, and the skill list's size (skillCap).
-      ...((own || this.skillCap()) && { config: { ...this.skillCap(), ...(own ?? {}) } }),
+      ...(Object.keys(config).length && { config }),
     };
     let result = null;
     let resumed = false;

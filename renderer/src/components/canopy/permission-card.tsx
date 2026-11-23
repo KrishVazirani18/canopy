@@ -5,13 +5,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CheckIcon, ExternalLinkIcon, MessageCircleQuestionIcon, ShieldAlertIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { type Answer } from '@/lib/api';
+import { api, type Answer } from '@/lib/api';
 import { usePane } from '@/lib/pane';
 import { useStore } from '@/lib/store';
 import type { PermissionItem } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { Switch } from './settings/kit';
 import { ToolInputView, permTitle, toolSummary } from './tool-details';
+import chromeLogo from './assets/chrome.svg';
 
 /** `otherOff`: the question takes one of its choices only (no line to write your own). `secret`: what is typed is
  *  hidden, and never shown again once sent. Both come from an OpenAI chat's questions. */
@@ -296,7 +297,64 @@ function ChoiceRow({ on, many, label, onClick }: { on: boolean; many: boolean; l
  *  Submit / Cancel), a link to open in the browser (Open link, then Done / Cancel), or a plain yes/no (Allow / Deny).
  *  The title says who is asking; their own words are underneath. Enter in a field submits; Esc stops the turn, which
  *  cancels the card, as it does every other. */
-export function ElicitationCard({ item, respond }: { item: PermissionItem; respond: (a: Answer) => void }) {
+const CHROME_SETUP_ADDRESS = 'chrome://inspect/#remote-debugging';
+
+function ChromeMark({ className }: { className?: string }) {
+  return <img src={chromeLogo} alt="" className={className} draggable={false} />;
+}
+
+export function ChromeConnectionCard({ setup, resolved = false, respond }: { setup: boolean; resolved?: boolean; respond: (answer: Answer) => void }) {
+  const [opening, setOpening] = useState(false);
+  const [showAddress, setShowAddress] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [skipped, setSkipped] = useState(false);
+  const connect = async () => {
+    if (setup) {
+      setOpening(true);
+      try {
+        const opened = await api.backgroundChrome?.openSettings();
+        if (!opened) { setShowAddress(true); return; }
+      } catch { setShowAddress(true); return; }
+      finally { setOpening(false); }
+    }
+    respond({ action: 'elicit-accept' });
+  };
+  return (
+    <Shell icon={ChromeMark} title="Connect Chrome" resolved={resolved} said={skipped ? 'Skipped' : 'Setup requested'}>
+      {!resolved && <>
+        <p className="text-ui text-muted-foreground">Let this chat use the Chrome tabs you already have open.</p>
+        <p className="mt-2 text-small text-muted-foreground">{setup ? 'In Chrome, turn on remote debugging and click Allow when asked.' : 'Chrome will ask you to allow access.'}</p>
+        {showAddress && <div role="status" className="mt-3 flex flex-wrap items-center gap-2 text-small text-muted-foreground">
+          <span>Paste this address into Chrome.</span>
+          <code className="select-all break-all rounded bg-secondary px-1.5 py-0.5">{CHROME_SETUP_ADDRESS}</code>
+          <Button size="xs" variant="outline" onClick={() => {
+            void navigator.clipboard?.writeText(CHROME_SETUP_ADDRESS).then(() => setCopied(true), () => {});
+          }}>{copied ? 'Copied' : 'Copy address'}</Button>
+        </div>}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button disabled={opening} onClick={showAddress ? () => respond({ action: 'elicit-accept' }) : connect}>
+            {opening ? 'Opening Chrome…' : showAddress ? 'Continue in Chrome' : 'Connect Chrome'}
+          </Button>
+          <Button variant="ghost" className="text-muted-foreground" disabled={opening} onClick={() => {
+            setSkipped(true);
+            respond({ action: 'elicit-decline' });
+          }}>Not now</Button>
+        </div>
+      </>}
+    </Shell>
+  );
+}
+
+/** Dispatches Canopy's Chrome setup card and ordinary MCP questions. */
+export function ElicitationCard(props: { item: PermissionItem; respond: (a: Answer) => void }) {
+  const { item, respond } = props;
+  if (item.ev.ask === 'chrome-setup' || item.ev.ask === 'chrome-allow') {
+    return <ChromeConnectionCard setup={item.ev.ask === 'chrome-setup'} resolved={item.resolved} respond={respond} />;
+  }
+  return <OrdinaryElicitationCard {...props} />;
+}
+
+function OrdinaryElicitationCard({ item, respond }: { item: PermissionItem; respond: (a: Answer) => void }) {
   const { ev, resolved } = item;
   const fields = (Array.isArray(ev.fields) ? ev.fields : []) as Field[];
   const ask: string = ev.ask ?? (ev.mode === 'url' ? 'link' : fields.length ? 'form' : 'confirm');

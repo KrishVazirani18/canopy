@@ -142,3 +142,15 @@ test('a new chat opens on the maker picked last only while the picker still offe
   for (const pick of [undefined, null, '', 'gemini', 7]) assert.equal(R.newChatEngine(pick, true, 4), 'claude');
   assert.equal(R.newChatEngine('codex', true, NaN), 'claude');
 });
+
+test('Claude Code stops the launch only when it is missing or was never signed in, and a working Codex lets you in', () => {
+  assert.equal(R.claudeBlock({ claudePath: null }), 'missing');
+  assert.equal(R.claudeBlock({ claudePath: '/bin/claude', auth: { loggedIn: false }, everSignedIn: false }), 'login');
+  assert.equal(R.claudeBlock({ claudePath: '/bin/claude', auth: { loggedIn: false }, everSignedIn: true }), null, 'a login that once worked: the app opens and asks in a dialog');
+  assert.equal(R.claudeBlock({ claudePath: '/bin/claude', auth: { loggedIn: null } }), null, 'a slow check never locks anyone out');
+  assert.equal(R.claudeBlock(null), null);
+  assert.equal(R.codexReady({ list: [{ engine: 'codex', state: 'ok' }] }), true, 'signed in to Codex only: a ChatGPT user gets in');
+  assert.equal(R.codexReady({ list: [{ engine: 'codex', state: 'checking' }, { engine: 'claude', state: 'ok' }] }), false);
+  assert.equal(R.codexReady({ list: [{ engine: 'codex', state: 'signed-out' }] }), false);
+  assert.equal(R.codexReady(undefined), false);
+});

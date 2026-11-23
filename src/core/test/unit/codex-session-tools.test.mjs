@@ -590,3 +590,18 @@ test('createCodexTools: what runs unasked, what asks, and what a chat without a 
   const empty = CT.createCodexTools({ relay, tools: [hidden], chat: () => ({}), ask: async () => 'deny' });
   assert.equal(await empty.link(), null);
 });
+
+test('Codex adds background Chrome beside its normal tools and respects an existing server with that name', { skip: missing }, async () => {
+  const chrome = { type: 'stdio', command: '/canopy', args: ['/chrome-server.mjs'], env: { ELECTRON_RUN_AS_NODE: '1' } };
+  const key = 'mcp_servers.canopy_chrome';
+  const normal = await running({ chrome }, { configMcp: { another: { command: 'other' } } });
+  assert.deepEqual(opened(normal.fake).config[key], {
+    command: chrome.command, args: chrome.args, env: chrome.env, startup_timeout_sec: 30, tool_timeout_sec: 300,
+  });
+  assert.ok(opened(normal.fake).config[KEY]);
+  assert.equal(opened(normal.fake).config['mcp_servers.another'], undefined, 'leave the existing configuration alone');
+
+  const occupied = await running({ chrome }, { configMcp: { canopy_chrome: { command: 'mine' } } });
+  assert.ok(opened(occupied.fake).config[KEY]);
+  assert.equal(opened(occupied.fake).config[key], undefined);
+});

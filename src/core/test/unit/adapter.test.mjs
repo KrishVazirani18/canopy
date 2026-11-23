@@ -541,6 +541,15 @@ test('local command output: every block, stderr marked, ANSI stripped, empties s
   assert.equal(mention[0].text, 'what does <command-name> mean in the logs?');
 });
 
+test('a saved /model and what it printed are not shown again: the chat says "Switched to" itself', { skip: v2 }, () => {
+  const saved = (content) => adapt({ type: 'user', parent_tool_use_id: null, message: { role: 'user', content } }, { history: true });
+  assert.deepEqual(saved('<command-name>/model</command-name>\n            <command-message>model</command-message>\n            <command-args>opus</command-args>'), []);
+  assert.deepEqual(saved('<local-command-stdout>Set model to `opus (claude-opus-5-5)`</local-command-stdout>'), []);
+  assert.deepEqual(saved('<local-command-stdout>Kept model as `opus`</local-command-stdout>'), []);
+  assert.deepEqual(saved('<command-name>/compact</command-name>\n<command-args></command-args>').map((e) => e.text), ['/compact'], 'other commands still show');
+  assert.deepEqual(kinds(saved('<local-command-stdout>Compacted</local-command-stdout>')), ['command-output']);
+});
+
 test('turn end: interrupted turns are not errors', { skip: v2 }, () => {
   const ev = one(interrupt.find((m) => m.type === 'result'));
   assert.equal(ev.interrupted, true);

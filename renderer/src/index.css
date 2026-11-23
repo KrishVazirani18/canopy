@@ -617,7 +617,9 @@ html[data-style="notebook"] svg.lucide:is(.size-3, .size-3\.5) { stroke-width: 2
 .prose-reply [data-streamdown="code-block"][data-language=""] { content-visibility: visible !important; overflow: visible; margin-top: 42px !important; position: relative; gap: 0; padding: 0; border: 0; border-radius: 12px; background: color-mix(in oklch, var(--foreground) 4.5%, transparent); }
 .prose-reply [data-streamdown="code-block"][data-language=""] [data-streamdown="code-block-header"] { display: none; }
 .prose-reply [data-streamdown="code-block"][data-language=""] [data-streamdown="code-block-body"] { border: 0; background: transparent; padding: 14px 16px; }
-.prose-reply [data-streamdown="code-block"][data-language=""] pre { background: transparent !important; line-height: 1.45; }
+.prose-reply [data-streamdown="code-block"][data-language=""] pre { background: transparent !important; line-height: 1.45; font-size: var(--fig-size, 13px); }
+/* Prose in a plain block (a draft to paste) wraps at full size instead of shrinking or scrolling. */
+.prose-reply [data-streamdown="code-block"][data-language=""] pre[data-wrap], .prose-reply [data-streamdown="code-block"][data-language=""] pre[data-wrap] :is(code, span) { white-space: pre-wrap; overflow-wrap: anywhere; }
 .prose-reply [data-streamdown="code-block"][data-language=""] pre :is(code, span) { font-size: var(--fig-size, 13px) !important; }
 .prose-reply [data-streamdown="code-block"][data-language=""] code > span::before { display: none !important; }
 /* Its buttons sit in a row just above it, like a table's: faint until you hover, copy first, never on the drawing. */

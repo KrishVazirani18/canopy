@@ -9,6 +9,21 @@ import type { CodexModel, Engine } from './api';
 export const otherMaker = (engine: Engine): Engine => (engine === 'codex' ? 'claude' : 'codex');
 
 /**
+ * What, about Claude Code, would stop Canopy at launch: not installed ('missing'), or signed out with no login that
+ * ever worked on this Mac ('login'). A sign-in check that did not answer in time (`loggedIn` null) stops nothing.
+ */
+export function claudeBlock(info: { claudePath?: string | null; auth?: { loggedIn: boolean | null } | null; everSignedIn?: boolean } | null | undefined): 'missing' | 'login' | null {
+  if (!info) return null;
+  if (!info.claudePath) return 'missing';
+  return info.auth?.loggedIn === false && !info.everSignedIn ? 'login' : null;
+}
+
+/** A Codex account that works: someone who only uses ChatGPT can use Canopy without Claude Code at all. */
+export function codexReady(accounts: { list?: { engine?: string; state?: string }[] } | null | undefined): boolean {
+  return Array.isArray(accounts?.list) && accounts!.list!.some((a) => a?.engine === 'codex' && a.state === 'ok');
+}
+
+/**
  * The maker a new chat opens on: the one whose model you picked last, as long as the picker still offers it. Once
  * the model list has been read and holds no OpenAI model (Codex is missing, signed out or not answering), a new chat
  * is a Claude chat, like every row the picker shows. Before the list has been read, your last pick stands.

@@ -1391,7 +1391,11 @@ function mcpToolRequest(p, item) {
   const own = str(meta.connector_id) === COMPUTER_USE;
   const who = clip(str(meta.connector_name), 80) || 'Computer Use';
   const shown = own ? list(meta.tool_params_display).find((d) => isObj(d) && d.name === 'app' && str(d.value)) : null;
-  const app = shown ? clip(str(shown.value), 120) : null;
+  // A development build carries the same name as the app it is built from ("Canopy" and Canopy's own dev build):
+  // the card says which one, by the bundle id's `.dev` ending, or two cards read as one asked twice.
+  const bundle = str(isObj(meta.tool_params) ? meta.tool_params.app : '');
+  const named = shown ? clip(str(shown.value), 120) : null;
+  const app = named && /\.dev$/i.test(bundle) && !/\bdev\b/i.test(named) ? `${named} (dev)` : named;
   const wants = !own ? null : app ? `${who} wants to use ${app}` : (message && /^Allow (.{1,80}?) to (.{1,200}?)\?$/.exec(message)?.slice(1, 3).join(' wants to ')) || `${who} needs your OK`;
   const warning = own ? clip(noticeText(meta.subtitle), NOTICE_CAP) : '';
   return {

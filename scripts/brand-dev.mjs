@@ -20,8 +20,9 @@ const bundleIcon = path.join(appDir, 'Contents/Resources/electron.icns');
 const EXECUTABLE = 'Canopy.app/Contents/MacOS/Canopy';
 // Canopy's own bundle ID. macOS grants notification permission per bundle ID, and Electron's shared
 // com.github.Electron never got the "Allow notifications?" prompt, so banners were silently dropped.
-// Helpers follow Chromium's "<main id>.helper" convention.
-const BUNDLE_ID = 'io.github.krishvazirani18.canopy.dev'; // the release app is io.github.krishvazirani18.canopy
+// A run from source is the released app's ID with ".dev" on the end (src/app-info.mjs): a separate app to macOS, so
+// the two never share permissions. Helpers follow Chromium's "<main id>.helper" convention.
+const BUNDLE_ID = DEV_APP_ID;
 
 const read = (file) => { try { return readFileSync(file); } catch { return null; } };
 const plistValue = (key) => { try { return execFileSync('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, plist], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; } };
@@ -62,11 +63,6 @@ const set = (key, value, file = plist) => {
   try { execFileSync('/usr/libexec/PlistBuddy', ['-c', `Set :${key} ${value}`, file]); }
   catch { execFileSync('/usr/libexec/PlistBuddy', ['-c', `Add :${key} string ${value}`, file]); }
 };
-// Canopy's own bundle ID. macOS grants notification permission per bundle ID, and Electron's shared
-// com.github.Electron never got the "Allow notifications?" prompt, so banners were silently dropped.
-// A run from source is the released app's ID with ".dev" on the end (src/app-info.mjs): a separate app to macOS, so
-// the two never share permissions. Helpers follow Chromium's "<main id>.helper" convention.
-const BUNDLE_ID = DEV_APP_ID;
 set('CFBundleIdentifier', BUNDLE_ID);
 for (const suffix of ['', ' (GPU)', ' (Plugin)', ' (Renderer)']) {
   const helper = path.join(fw, `Canopy Helper${suffix}.app/Contents/Info.plist`);
@@ -76,8 +72,26 @@ set('CFBundleName', 'Canopy');
 set('CFBundleExecutable', 'Canopy');
 set('CFBundleDisplayName', 'Canopy');
 copyFileSync(icon, bundleIcon);
-// Re-sign ad hoc so macOS accepts the modified bundle.
-try { execFileSync('codesign', ['--force', '--deep', '--sign', '-', appDir], { stdio: 'ignore' }); } catch { console.log('codesign failed (continuing)'); }
+// Re-sign so macOS accepts the modified bundle. With a real certificate, not ad hoc: the Keychain trusts an
+// ad-hoc app by its exact code hash, which changes on every re-sign (each `npm install`), so macOS asked for
+// the login password again to open "Canopy Safe Storage". A certificate-signed app is trusted by its bundle id
+// and team, which stay the same, so "Always Allow" sticks. CANOPY_DEV_SIGN_IDENTITY picks the certificate;
+// otherwise the first "Apple Development" one in the keychain; with none, ad hoc as before.
+const devIdentity = () => {
+  if (process.env.CANOPY_DEV_SIGN_IDENTITY) return process.env.CANOPY_DEV_SIGN_IDENTITY;
+  try {
+    const out = execFileSync('security', ['find-identity', '-v', '-p', 'codesigning'], { encoding: 'utf8', timeout: 10_000 });
+    return out.match(/"(Apple Development: [^"]+)"/)?.[1] ?? null;
+  } catch { return null; }
+};
+const sign = (identity) => execFileSync('codesign', ['--force', '--deep', '--sign', identity, appDir], { stdio: 'ignore', timeout: 120_000 });
+const identity = devIdentity();
+let signed = false;
+if (identity) {
+  try { sign(identity); signed = true; console.log(`Signed the dev bundle as "${identity}"`); }
+  catch { console.log(`codesign with "${identity}" failed, signing ad hoc (the Keychain will ask again after each reinstall)`); }
+}
+if (!signed) { try { sign('-'); } catch { console.log('codesign failed (continuing)'); } }
 execFileSync('touch', [appDir]);
 try {
   execFileSync('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister', ['-f', appDir]);

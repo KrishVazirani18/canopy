@@ -73,6 +73,8 @@ import { titleCase } from './title-case.mjs';
 import { CodexTitler, titleHelper } from './codex-titles.mjs';
 import { CodexTurnModels } from './codex-turn-models.mjs';
 import { createComputerUse } from './computer-use.mjs';
+import { CHROME_SETUP_URL } from './core/background-chrome.mjs';
+import { createBackgroundChromeHost } from './core/background-chrome-host.mjs';
 import { createTelemetry } from './telemetry/index.mjs';
 import { createEngineTracker } from './telemetry/engine.mjs';
 import { createSummaryScheduler, summarizeDays } from './telemetry/summary.mjs';
@@ -82,6 +84,7 @@ import { APP_ID, downloadUrl, feedUrl } from './app-info.mjs';
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
+const chromeHost = createBackgroundChromeHost({ log });
 
 let win = null;
 let envInfo = null;       // { env, claudePath, version, auth, shellOk, codexPath, codexVersion }
@@ -379,7 +382,7 @@ function chatHost() {
           // 'elicitation': a question an MCP server asks mid-turn (a form, a sign-in link) is a card, not an automatic no.
           extended: ['tasks', 'elicitation'],
           // Canopy's own tools, the ones a Claude chat has below, reached through the relay (src/core/codex-tools.mjs).
-          tools: toolRelay, look: lookCapture(), shots, otherChats,
+          tools: toolRelay, look: lookCapture(), shots, otherChats, chrome: chromeHost.configuration(),
           // How a widget's script ran, from the window, by the call's id: the same meeting place a Claude chat's uses.
           widgetReport: (callId) => widgetReports.wait(callId),
           // Canopy Memory (src/core/memory-store.mjs): the notes both makers' chats share, unless turned off in
@@ -419,6 +422,7 @@ function chatHost() {
         freeBackground: (sessionId) => freeBackground(sessionId, s.accountId),
         widgetReport: (toolUseId) => widgetReports.wait(toolUseId),
         look: lookCapture(),
+        chrome: chromeHost.configuration(),
         shots,
         otherChats,
         // Canopy Memory (src/core/memory-store.mjs): the notes both makers' chats share, unless turned off in
@@ -632,6 +636,8 @@ const codexHeld = new CodexHeld({
   log,
 });
 app.on('browser-window-focus', () => codexHeld.refreshSoon());
+// Back at Canopy (the window to the front, or the Mac awake again): a good moment to see whether an update is out.
+app.on('browser-window-focus', () => appUpdate?.nudge());
 // Names Codex chats as the Codex app does (src/codex-titles.mjs): once, after the first real exchange, never over yours.
 const codexTitler = new CodexTitler({
   service: codexService, chats: codexChats, log,
@@ -1296,6 +1302,11 @@ const computerUse = createComputerUse({
   version: (plist) => new Promise((resolve) => execFile('/usr/bin/plutil', ['-extract', 'CFBundleShortVersionString', 'raw', '-o', '-', plist], { timeout: 3000 }, (err, out) => resolve(err ? null : String(out).trim() || null))),
   log,
 });
+handle('background-chrome:settings', () => new Promise((resolve) => {
+  if (process.platform !== 'darwin') return resolve(false);
+  execFile('/usr/bin/open', ['-b', 'com.google.Chrome', CHROME_SETUP_URL], { timeout: 5000 }, (error) => resolve(!error));
+}));
+
 handle('computer-use:status', async () => { if (!envInfo) await ensureEnv(); return envInfo?.codexPath ? computerUse.status() : null; });
 handle('computer-use:pane', async (key) => computerUse.openPane(String(key ?? '')));
 handle('computer-use:turn-on', async () => { const r = await computerUse.turnOn(); return { ...r, status: await computerUse.status() }; });
@@ -2137,7 +2148,7 @@ function createWindow() {
     applyUiSize(); dropQuestion();
     // The window is up: this Canopy started. An update that was just installed is confirmed by that (the version
     // before it is let go), and from here on Canopy looks for the next one.
-    if (!startConfirmed) { startConfirmed = true; appUpdate.confirmStarted().then(() => { if (!stopped) appUpdate.start(); }).catch(() => {}); if (SELFTEST) selfTest(); }
+    if (!startConfirmed) { startConfirmed = true; appUpdate.confirmStarted().then(() => { if (!stopped) appUpdate.start(); }).catch(() => {}); powerMonitor.on('resume', () => appUpdate.nudge()); if (SELFTEST) selfTest(); }
   });
   lockDown(wc);
   contextMenu(wc);
@@ -2468,6 +2479,7 @@ function shutdown() {
   codexService.close().catch(() => {}); // the shared Codex helper, if it is up
   codexKeyService.close().catch(() => {}); // and the one started for a pasted key
   toolRelay.close().catch(() => {});    // and the socket Codex chats call Canopy's tools on
+  chromeHost.close();
   closeTerm();
   signIn.stop(); // a sign-in still running in the window
   stopUiWatcher();

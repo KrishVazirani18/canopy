@@ -385,3 +385,27 @@ test('the helper is a plain shell script that waits, swaps by renaming, and puts
   assert.match(SWAP_HELPER, /mv "\$PREVIOUS" "\$TARGET"/, 'the way back');
   assert.doesNotMatch(SWAP_HELPER, /\bcurl\b|\bsudo\b|\brm -rf \/(?!\S)/, 'it downloads nothing and asks for no password');
 });
+
+// ---- when it checks ----
+
+test('it checks every hour, and a nudge checks only once the last check is half an hour old', async () => {
+  const { CHECK_EVERY_MS, NUDGE_AFTER_MS } = await import('../../app-update.mjs');
+  assert.equal(CHECK_EVERY_MS, 60 * 60_000);
+  assert.equal(NUDGE_AFTER_MS, 30 * 60_000);
+  let now = 1_000_000;
+  const { updater, world } = make({ world: { feed: feedOf({ version: '0.1.0' }) }, opts: { now: () => now, firstCheckMs: 10 * 60_000, checkEveryMs: 10 * 60 * 60_000 } });
+  const fetches = () => world.fetched.filter((u) => u.endsWith('latest.json')).length;
+  updater.nudge(); // not started yet: nothing
+  assert.equal(fetches(), 0);
+  await updater.start();
+  updater.nudge(); // never checked: checks now
+  await updater.busy;
+  assert.equal(fetches(), 1);
+  now += 10 * 60_000; updater.nudge(); await updater.busy; // ten minutes later: too soon
+  assert.equal(fetches(), 1);
+  now += 25 * 60_000; updater.nudge(); await updater.busy; // 35 minutes after the last check: checks
+  assert.equal(fetches(), 2);
+  updater.stop();
+  updater.nudge(); // stopped: nothing
+  assert.equal(fetches(), 2);
+});

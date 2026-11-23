@@ -361,6 +361,10 @@ export interface CanopyApi {
     clearDrift(which?: 'codex'): Promise<UpkeepStatus | null>;
     onStatus(cb: (s: UpkeepStatus) => void): Unsub;
   };
+  /** Open Chrome’s setup page for the shared background connector. */
+  backgroundChrome?: {
+    openSettings(): Promise<boolean>;
+  };
   /** What Codex needs before it can use the Mac (src/computer-use.mjs). Missing in a main process from before it. */
   computerUse?: {
     status(): Promise<ComputerUseStatus | null>;

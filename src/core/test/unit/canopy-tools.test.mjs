@@ -120,7 +120,18 @@ test('a script cannot look: it is told why, and nothing is rendered', { skip: mi
   const code = `try { await mcp('${L.LOOK_TOOL}', { url: 'localhost:3000', width: 390 }); } catch (e) { return e.message; }`;
   const r = await within(s.runCode(s.run, { description: 'd', code }, {}), 20000, 'the script');
   assert.match(r.content[0].text, /^A script cannot bring a screenshot back: .* Call look yourself, once for each picture you need\./);
+  const picture = await s.runCode(s.run, { description: 'Chrome screenshot', code: "try { await mcp('mcp__canopy_chrome__take_screenshot', { pageId: 1 }); } catch (e) { return e.message; }" }, {});
+  assert.match(picture.content[0].text, /Call the Chrome screenshot tool directly/);
   assert.deepEqual(sent, []);
   // Refusing costs a step each time, so the note that asks for scripts says the exception where the rule is given.
   assert.ok(C.CODE_NOTE.includes('So does a tool whose result is a picture (a screenshot), however many times you call it: a script can only bring back words.'));
+});
+
+test('Claude adds the background Chrome connector alongside its other servers', { skip: missing }, async () => {
+  const chrome = { type: 'stdio', command: '/canopy', args: ['/chrome-server.mjs'], env: { ELECTRON_RUN_AS_NODE: '1' } };
+  const { s, fake } = session({ codeMode: true, chrome });
+  await s.warm();
+  const { mcpServers } = fake.current.options;
+  assert.deepEqual(Object.keys(mcpServers), [...ALWAYS, 'canopy', 'canopy_chrome']);
+  assert.deepEqual(mcpServers.canopy_chrome, chrome);
 });

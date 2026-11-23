@@ -8,7 +8,9 @@ import Onboarding from './onboarding';
 import { TourOverlay } from './tour';
 
 // Onboarding sits under Canopy's dialogs (z-50 and up), so a sign-in sheet opened from Your Accounts shows over it.
-export function FirstRun({ design = false, onDone }: { design?: boolean; onDone?: () => void }) {
+// `appReady`: the app itself is on screen (not a setup screen such as "Sign in to Claude Code", which has none of the
+// tour's stops). The tour waits for it: onboarding ends, the setup screen gets its turn, and the tour runs after.
+export function FirstRun({ design = false, onDone, appReady = true }: { design?: boolean; onDone?: () => void; appReady?: boolean }) {
   const [phase, setPhase] = useState<'onboarding' | 'leaving' | 'tour'>('onboarding');
   const finish = () => { setPhase('leaving'); setTimeout(() => setPhase('tour'), 650); };
   const finished = () => { if (typeof api?.onboarding?.done === 'function') void api.onboarding.done(); onDone?.(); };
@@ -19,7 +21,7 @@ export function FirstRun({ design = false, onDone }: { design?: boolean; onDone?
           <Onboarding onFinish={finish} design={design} />
         </div>
       )}
-      {phase === 'tour' && <TourOverlay design={design} onFinished={finished} />}
+      {phase === 'tour' && appReady && <TourOverlay design={design} onFinished={finished} />}
     </>
   );
 }

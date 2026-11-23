@@ -1497,6 +1497,11 @@ test('Computer Use asking to use an app: a plain approval that says who wants wh
   assert.deepEqual(A.replyTo(req, { action: 'allow' }).result, { action: 'accept', content: {}, _meta: null });
   assert.deepEqual(A.replyTo(req, { action: 'always' }).result, { action: 'accept', content: {}, _meta: { persist: 'always' } });
   assert.deepEqual(A.replyTo(req, { action: 'deny' }).result, { action: 'decline', content: null, _meta: null });
+  // A dev build named like the app it comes from says so, so its card is not mistaken for the app's asked twice.
+  const dev = (id, name) => c.adapter.request(cuAsk({ ...meta, tool_params: { app: id }, tool_params_display: [{ name: 'app', display_name: 'App', value: name }] })).base;
+  assert.deepEqual([dev('io.github.krishvazirani18.canopy.dev', 'Canopy').title, dev('io.github.krishvazirani18.canopy.dev', 'Canopy').app], ['Computer Use wants to use Canopy (dev)', 'Canopy (dev)']);
+  assert.equal(dev('io.github.krishvazirani18.canopy', 'Canopy').title, 'Computer Use wants to use Canopy');
+  assert.equal(dev('com.example.app.dev', 'Example Dev').title, 'Computer Use wants to use Example Dev');
 
   // Where it may only be remembered for the chat, the second button says so; recording audio asks the same way.
   const audio = A.requestOf(cuAsk({ ...meta, persist: ['session'], tool_name: 'start_audio_recording', tool_params: {}, tool_params_display: [], subtitle: undefined }, { message: 'Allow Computer Use to record computer audio?' }), null);

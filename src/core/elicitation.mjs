@@ -9,6 +9,8 @@
 // The answer goes back in MCP's words: accept (with the form's values), decline (the user said no) or cancel (the
 // user walked away). Nothing here throws: a schema that cannot be read is a question with no fields.
 
+import { CHROME_ALLOW_PROMPT, CHROME_CONNECT_PROMPT, CHROME_SERVER } from './background-chrome.mjs';
+
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' ? v : '');
 const clip = (s, n) => (s.length > n ? `${s.slice(0, n)}…` : s);
@@ -110,10 +112,12 @@ export function describe(req) {
   const link = r.mode === 'url';
   const url = link ? webLink(r.url) : null;
   const fields = link ? [] : fieldsOf(r.requestedSchema);
-  const ask = link ? 'link' : fields.length ? 'form' : 'confirm';
+  const chrome = !link && server === CHROME_SERVER && !fields.length
+    && (r.message === CHROME_CONNECT_PROMPT ? 'chrome-setup' : r.message === CHROME_ALLOW_PROMPT ? 'chrome-allow' : null);
+  const ask = chrome || (link ? 'link' : fields.length ? 'form' : 'confirm');
   const title = clip(str(r.title), 200) || (ask === 'link' ? `${who} wants you to open a link` : ask === 'form' ? `${who} needs a few details` : `${who} needs your OK`);
   return {
-    server, message: clip(str(r.message), 4000), mode: link ? 'url' : 'form', ask, url, fields, title,
+    server, message: clip(str(r.message), 4000), mode: link ? 'url' : 'form', ask, url, fields, title: chrome ? 'Connect Chrome' : title,
     elicitationId: typeof r.elicitationId === 'string' ? r.elicitationId : null,
   };
 }

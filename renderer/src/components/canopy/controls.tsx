@@ -277,7 +277,7 @@ export function Controls({ part }: { part: 'model' | 'mode' }) {
   const runs = chatRuns(meta, { model, effort, ultra }, gpt);
   const modelChip = (
     <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger className={cn(chip, 'pr-2 pl-2.5')}>
+      <DropdownMenuTrigger data-tour="model" className={cn(chip, 'pr-2 pl-2.5')}>
         <span className="text-foreground">{runs.model}</span>
         {/* A pane's one-line box (composer.tsx) is narrow: the effort word goes first, so the words have room. */}
         {runs.effort && <span key={runs.effort} className={cn('roll-in @max-[640px]/box:hidden', runs.ultra ? 'ultra-text font-medium' : 'text-muted-foreground')}>{runs.effort}</span>}

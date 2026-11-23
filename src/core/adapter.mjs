@@ -195,6 +195,9 @@ function serverResult(b, m, parent, at) {
 
 // ---- user text ----
 
+// What /model prints when it runs. Shown already as the chat's "Switched to" line.
+const MODEL_SAID = /^\s*(Set model to|Kept model as) /;
+
 function outputs(re, text) {
   const out = [];
   re.lastIndex = 0;
@@ -225,7 +228,7 @@ function machineText(text, history, origin) {
   if (INTERRUPT.test(t)) return history ? [{ kind: 'notice', code: 'interrupted', text: 'Stopped', history: true }] : [];
   // Live, the system/task_notification frame already reported it.
   if (origin?.kind === 'task-notification' || t.startsWith('<task-notification>')) return history ? [taskFromText(t, origin)] : [];
-  if (t.startsWith('<local-command-stdout>') || t.startsWith('<local-command-stderr>')) return outputs(LOCAL_OUT, t);
+  if (t.startsWith('<local-command-stdout>') || t.startsWith('<local-command-stderr>')) return outputs(LOCAL_OUT, t).filter((e) => !MODEL_SAID.test(e.text));
   if (t.startsWith('<bash-input>')) {
     const cmd = (tag(t, 'bash-input') ?? '').trim();
     const end = t.indexOf('</bash-input>');
@@ -239,6 +242,9 @@ function machineText(text, history, origin) {
       const message = (tag(t, 'command-message') ?? '').trim();
       name = message && !message.startsWith('/') ? `/${message}` : message;
     }
+    // Changing the model (the picker, or /model, which Canopy runs itself) is saved as a /model command. The chat
+    // already says it with its own "Switched to" line, so the saved command and its output are not shown again.
+    if (name === '/model') return [];
     const line = `${name} ${(tag(t, 'command-args') ?? '').trim()}`.trim();
     return line ? [{ kind: 'user-text', text: line, images: 0, documents: 0, command: true }] : [];
   }

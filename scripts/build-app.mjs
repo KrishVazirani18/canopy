@@ -5,7 +5,7 @@
 //
 // What goes into the app is collected first, in dist/stage/app, so it can be looked at:
 //   src/ (without tests), dist-ui/ (the built window), the icons, resources/ (Canopy's plugins), and only the
-//   node_modules the main process uses: the Claude Agent SDK with what it needs, zod and node-pty. Everything the
+//   node_modules the main process uses: the Claude Agent SDK with what it needs, zod, node-pty and the Chrome connector. Everything the
 //   window uses is already inside dist-ui. The SDK's own copy of Claude Code (300 MB per chip) is left out: Canopy
 //   runs the Claude Code that is on the Mac.
 // Then @electron/packager makes the bundle around Electron, with the app in app.asar. Two folders stay real folders
@@ -29,7 +29,7 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024, ...opts }).toString();
 
 /** What the main process imports from node_modules. A new one has to be named here: the build checks. */
-const RUNTIME_PACKAGES = ['@anthropic-ai/claude-agent-sdk', 'zod', 'node-pty'];
+const RUNTIME_PACKAGES = ['@anthropic-ai/claude-agent-sdk', 'zod', 'node-pty', 'chrome-devtools-mcp'];
 /** Never shipped: the SDK's bundled Claude Code, one per platform. */
 const LEFT_OUT = /^@anthropic-ai\/claude-agent-sdk-/;
 /** Files no running app reads. Licences always stay. */
@@ -155,6 +155,8 @@ function stage(stageDir, { version, arch }) {
     const to = path.join(stageDir, rel);
     fs.mkdirSync(to, { recursive: true });
     if (rel === path.join('node_modules', 'node-pty')) stageNodePty(to, arch);
+    // Chrome DevTools reads Markdown issue descriptions at runtime.
+    else if (rel === path.join('node_modules', 'chrome-devtools-mcp')) copyDir(path.join(ROOT, rel), to);
     else copyDir(path.join(ROOT, rel), to, (src, e) => (e.isDirectory() ? e.name === 'node_modules' : isDeadWeight(e.name)));
   }
 

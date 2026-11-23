@@ -69,7 +69,11 @@ export function SetupScreen({ problem, detail, rechecking, still, onCheck }: { p
           <p>Canopy needs Claude Code on this Mac. Paste this into Terminal:</p>
           <CopyCommand text="curl -fsSL https://claude.ai/install.sh | bash" />
         </>)}
-        {problem === 'login' && <p>In Terminal, run <code className={code}>claude</code>, then <code className={code}>/login</code>. Come back here when you’re signed in.</p>}
+        {problem === 'login' && (<>
+          <p>Paste this into Terminal to open Claude Code:</p>
+          <CopyCommand text="claude" />
+          <p>Then type <code className={code}>/login</code> and follow the steps. Come back here when you’re signed in.</p>
+        </>)}
         {problem === 'error' && <p data-selectable>{detail}</p>}
       </div>
       {/* Focused from the start so Return checks again. aria-disabled, not disabled, while it checks: a

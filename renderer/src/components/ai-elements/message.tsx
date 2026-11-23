@@ -373,6 +373,14 @@ const REMARK_PLUGINS = [...Object.values(defaultRemarkPlugins), remarkVisualizeR
 // Links ask first in Canopy's own dialog; sites you've chosen to trust open straight away.
 const LINK_SAFETY = { enabled: true, onLinkCheck: opensTrusted, renderModal: (p: LinkSafetyModalProps) => <LinkConfirm {...p} /> };
 
+/** A plain block is prose when nothing in it is laid out by position: no box or arrow characters, no pipes or
+ *  plus-dash corners, no runs of spaces inside a line, no tree branches. Lists and quotes are fine. */
+const DRAWN = /[\u2500-\u257f\u2580-\u259f\u2190-\u21ff\u25a0-\u25ff]|\||\+-|-\+|\S {2,}\S|^\s*[`\\]--/m;
+export function isProse(text: string): boolean {
+  const t = text.trim();
+  return !!t && !DRAWN.test(t);
+}
+
 /** Plain text blocks (diagrams, trees) that are wider than the column shrink their type to fit, down to 9px, so
  *  they read whole instead of scrolling sideways. Re-measured whenever the content or the column width changes. */
 function useFitFigures(ref: React.RefObject<HTMLDivElement | null>, content: unknown) {
@@ -386,6 +394,10 @@ function useFitFigures(ref: React.RefObject<HTMLDivElement | null>, content: unk
         const box = pre.closest<HTMLElement>('[data-streamdown="code-block-body"]');
         if (!box) continue;
         pre.style.removeProperty("--fig-size");
+        // Words, not a drawing (a draft message, a note): it wraps at full size like text. Shrinking it only made
+        // tiny type that still scrolled sideways.
+        if (isProse(pre.textContent ?? "")) { pre.dataset.wrap = ""; continue; }
+        delete pre.dataset.wrap;
         const pad = 32; // the body's 16px padding each side
         const room = box.clientWidth - pad, need = box.scrollWidth - pad;
         if (need > room + 1 && room > 0) pre.style.setProperty("--fig-size", `${Math.max(9, Math.floor(13 * (room / need) * 10) / 10)}px`);

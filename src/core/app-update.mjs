@@ -7,7 +7,8 @@
 //               { version, notes, zipUrl, zipSha256, zipSize, minVersion, minMessage }
 //             the newest version, where its zip is and what the zip must hash to, and the oldest version that may
 //             still be used (minVersion, with the words to show for it: minMessage).
-//   check     a minute after launch, then every four hours. A newer version is downloaded in the background.
+//   check     a minute after launch, then every hour, and when the Mac wakes or Canopy's window comes back to the
+//             front (at most every half hour: nudge()). A newer version is downloaded in the background.
 //   stage     the zip is checked against the feed's SHA-256 and size and unpacked with ditto into Canopy's own data
 //             folder. The app inside must be Canopy (its bundle id), be the version the feed named, and be intact
 //             (codesign --verify). When the running Canopy is signed by a developer team, the new one must be signed
@@ -30,7 +31,9 @@ import { compareVersions } from './upkeep.mjs';
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 export const FIRST_CHECK_MS = MINUTE;
-export const CHECK_EVERY_MS = 4 * HOUR;
+export const CHECK_EVERY_MS = HOUR;
+/** A nudge (the Mac woke, the window came back to the front) checks only when the last check is older than this. */
+export const NUDGE_AFTER_MS = 30 * MINUTE;
 /** No zip larger than this is ever downloaded (the universal app is about a quarter of it). */
 export const MAX_ZIP_BYTES = 1024 ** 3;
 const MAX_FEED_BYTES = 64 * 1024;
@@ -156,7 +159,7 @@ export class AppUpdater {
     this.fetch = o.fetch; this.run = o.run ?? run; this.startHelper = o.startHelper ?? startHelper;
     this.load = o.load ?? (() => null); this.save = o.save ?? (() => {});
     this.onChange = o.onChange ?? (() => {}); this.log = o.log ?? (() => {}); this.now = o.now ?? Date.now;
-    this.firstCheckMs = o.firstCheckMs ?? FIRST_CHECK_MS; this.checkEveryMs = o.checkEveryMs ?? CHECK_EVERY_MS;
+    this.firstCheckMs = o.firstCheckMs ?? FIRST_CHECK_MS; this.checkEveryMs = o.checkEveryMs ?? CHECK_EVERY_MS; this.nudgeAfterMs = o.nudgeAfterMs ?? NUDGE_AFTER_MS;
     this.maxZipBytes = o.maxZipBytes ?? MAX_ZIP_BYTES; this.stallMs = o.stallMs ?? STALL_MS;
     this.off = o.off ?? null;
     let saved = null;
@@ -195,7 +198,7 @@ export class AppUpdater {
   get startedFile() { return path.join(this.dir, 'started.json'); }
   get resultFile() { return path.join(this.dir, 'result.json'); }
 
-  /** Looks at what an earlier run left, then checks a minute from now and every four hours. */
+  /** Looks at what an earlier run left, then checks a minute from now and every hour. */
   async start() {
     if (this.off || this.stopped || this.timers.length) return;
     await this.#tidy();
@@ -204,6 +207,17 @@ export class AppUpdater {
     const every = setInterval(() => { this.check(); }, this.checkEveryMs);
     first.unref?.(); every.unref?.();
     this.timers = [first, every];
+  }
+
+  /**
+   * Someone is back (the Mac woke, the window came to the front): check, unless a check ran in the last half hour or
+   * the first one hasn't had its turn yet. So a required update reaches people about when they next look at Canopy.
+   */
+  nudge() {
+    if (this.off || this.stopped || !this.timers.length) return;
+    const at = this.lastCheck?.at;
+    if (Number.isFinite(at) && this.now() - at < this.nudgeAfterMs) return;
+    void this.check();
   }
 
   /** Stops checking and gives up a download under way (what it had is thrown away at the next start). */

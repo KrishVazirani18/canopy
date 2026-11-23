@@ -23,6 +23,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { statSync } from 'node:fs';
 import { query, forkSession, getSessionMessages } from '@anthropic-ai/claude-agent-sdk';
+import { CHROME_SERVER } from './background-chrome.mjs';
 import * as adapterMod from './adapter.mjs';
 import * as fileApprovals from './file-approvals.mjs';
 import { forClaude } from './handoff.mjs';
@@ -193,11 +194,12 @@ export class Session extends EventEmitter {
     allowBypass = false, personalMemory = true, trusted, trustedFolders, extended = false, debug = false, checkpoints = true, autoRestart = true, appVersion = '0.0.1',
     trustEnv,
     settingSources, strictMcpConfig, queryFn = query, log, onDrift, widgetReport, freeBackground, readTranscript, startedWith, otherChats,
-    look, shots, canopyPlugin, canopyKit, memory, memoryBridge = false,
+    look, shots, canopyPlugin, canopyKit, memory, memoryBridge = false, chrome,
     account = null, onAccount, onRateLimit, accountNotice,
   } = {}) {
     super();
     this.cwd = cwd;
+    this.chrome = chrome;
     this.personalMemory = personalMemory;
     // Canopy Memory (memory-store.mjs): the notes this chat is shown when it starts, and saves to with its remember
     // tool. A host that keeps none (or whose user turned memory off) gives nothing, and the chat has neither the
@@ -1444,7 +1446,7 @@ export class Session extends EventEmitter {
     return run.task;
   }
 
-  // Every in-process server this process should have. setMcpServers takes the whole set each time, so the servers
+  // Every app-provided MCP server this process should have. setMcpServers takes the whole set each time, so the servers
   // that are always there are named again whenever Code Mode's comes or goes (leaving one out would remove it).
   servers(run, code) {
     const out = {};
@@ -1459,6 +1461,7 @@ export class Session extends EventEmitter {
     const task = this.taskServer(run);
     if (task) out[taskMod.TASK_SERVER] = task;
     if (code) out[codeMod.CODE_SERVER] = this.codeServer(run);
+    if (this.chrome) out[CHROME_SERVER] = this.chrome;
     return out;
   }
 
@@ -1480,8 +1483,12 @@ export class Session extends EventEmitter {
       readFile: (path, o) => run.q.readFile(path, o),
       roots: () => [this.cwd, ...(Array.isArray(this.settings.additionalDirectories) ? this.settings.additionalDirectories.filter((d) => typeof d === 'string' && d.startsWith('/')) : [])],
       emit: (ev) => { if (this.run === run) this.event(ev); },
-      // A script's result is words: a look made from one would spend the render and bring back no picture.
-      direct: (tool) => (tool === lookMod.LOOK_TOOL ? 'A script cannot bring a screenshot back: it would get the caption and no picture. Call look yourself, once for each picture you need.' : null),
+      // A script's result is words. The agent needs these calls directly to get the image.
+      direct: (tool) => {
+        if (tool === lookMod.LOOK_TOOL) return 'A script cannot bring a screenshot back: it would get the caption and no picture. Call look yourself, once for each picture you need.';
+        if (tool === `mcp__${CHROME_SERVER}__take_screenshot`) return 'Call the Chrome screenshot tool directly to receive the image.';
+        return null;
+      },
     });
     return run.code.run(args, extra);
   }

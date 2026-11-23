@@ -42,7 +42,9 @@ type Stop = { find: () => Element | null; view: 'chat' | 'home'; side: 'below' |
 const STOPS: Stop[] = [
   { view: 'chat', side: 'below', find: () => boxed(document.querySelector('[data-chat-view="main"] textarea, [data-chat-view="main"] [contenteditable="true"]')),
     title: 'Ask for Anything', line: 'Type what you want done. Claude or ChatGPT works on it, right on your Mac.' },
-  { view: 'chat', side: 'below', find: () => byText('[data-chat-view="main"] button', (t) => /^(Opus|Sonnet|Haiku|Fable|GPT|o\d)/.test(t)) ?? null,
+  // The chip is tagged (controls.tsx): its words vary ("Opus 5.5", or "opus-5-5" before Claude Code has listed its models).
+  { view: 'chat', side: 'below', find: () => document.querySelector('[data-chat-view="main"] [data-tour="model"]')
+      ?? byText('[data-chat-view="main"] button', (t) => /^(opus|sonnet|haiku|fable|gpt|o\d)/i.test(t)) ?? null,
     title: 'Pick Who Does It', line: 'Switch between Claude and ChatGPT here, any time, even in the middle of a chat.' },
   { view: 'chat', side: 'right', find: () => byText('aside a, aside button, nav a, nav button', (t) => t.startsWith('New Chat')) ?? null,
     title: 'Start a Few at Once', line: 'Each chat keeps working on its own while you start the next one.' },
@@ -69,6 +71,11 @@ const PAD = 6, CARD_W = 340, GAP = 14;
 // gently instead of leaping; it always aims at where the target is this frame, so if the app is still settling the
 // glide bends toward the new place instead of restarting. The card only appears once the spotlight has landed, placed
 // from where it landed; between stops it fades out, moves while invisible, and fades in.
+/** A stop whose target can't be found this long is passed over: the tour never leaves the window dimmed with no card. */
+const MISSING_MS = 2000;
+/** And whatever else goes wrong (a target that never holds still, an error), a stop whose card isn't up this long is
+ *  passed over too. The first stop gets longer: the app may still be starting. */
+const STUCK_MS = 4000;
 const ease = (k: number) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
 
 /** `onFinished`: the tour is over (done or skipped). `design`: show Replay (the harness), never on a real first run. */
@@ -82,18 +89,33 @@ export function TourOverlay({ onFinished, design = true }: { onFinished?: () => 
   const stop = STOPS[Math.min(at, STOPS.length - 1)];
   const spot = useRef<HTMLDivElement>(null), card = useRef<HTMLDivElement>(null);
   const cur = useRef<Box | null>(null);
+  const dir = useRef<1 | -1>(1); // which way the last move went: a stop that can't be found is passed over that way
+  const go = (n: number) => { dir.current = n < at ? -1 : 1; setAt(n); };
 
   useEffect(() => {
     if (done) { ui.set({ view: 'home' }); return; } // the tour ends on Home, where every launch starts
     setCardOn(false);
-    let raf = 0, landedFor = 0, last = performance.now(), placed = false, from: Box | null = null, t0 = 0, dur = 0;
+    let raf = 0, landedFor = 0, last = performance.now(), placed = false, from: Box | null = null, t0 = 0, dur = 0, missing = 0;
+    const began = performance.now();
+    const passOver = () => { setAt((n) => (dir.current < 0 && n > 0 ? n - 1 : n + 1)); if (dir.current < 0 && at === 0) dir.current = 1; };
     const frame = (now: number) => {
+      if (!placed && now - began > (cur.current ? STUCK_MS : STUCK_MS * 2)) { passOver(); return; }
+      try { step(now); } catch { passOver(); return; } // a stop that throws is passed over, never left half-drawn
+      raf = requestAnimationFrame(frame);
+    };
+    const step = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000); last = now;
       // the app may still be starting (and opening a new chat as it does): keep asking for the stop's view until it holds
       if (ui.get().view !== stop.view) ui.set({ view: stop.view });
       const el = stop.find();
       const r = el?.getBoundingClientRect();
-      if (r && r.width && r.height) {
+      if (!(r && r.width && r.height)) {
+        // Not on screen (yet): wait a moment for the app to lay out, then pass over it rather than hang.
+        missing += dt * 1000;
+        // The first stop waits longer: the app may still be starting.
+        if (missing > (cur.current ? MISSING_MS : MISSING_MS * 3)) throw new Error('missing'); // passed over by frame()
+      } else {
+        missing = 0;
         const target: Box = { x: r.left - PAD, y: r.top - PAD, w: r.width + PAD * 2, h: r.height + PAD * 2 };
         if (!cur.current) cur.current = { ...target }; // first stop: start where it is, no flight in from nowhere
         if (!from) { // the glide for this stop starts from wherever the spotlight is now
@@ -127,7 +149,6 @@ export function TourOverlay({ onFinished, design = true }: { onFinished?: () => 
           if (!placed) { placed = true; setCardOn(true); }
         }
       }
-      raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
@@ -138,15 +159,15 @@ export function TourOverlay({ onFinished, design = true }: { onFinished?: () => 
   useEffect(() => {
     if (done) return;
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); setAt((n) => n + 1); }
-      else if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); setAt((n) => Math.max(0, n - 1)); }
-      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setAt(STOPS.length); }
+      if (e.key === 'Enter' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); dir.current = 1; setAt((n) => n + 1); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); dir.current = -1; setAt((n) => Math.max(0, n - 1)); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); dir.current = 1; setAt(STOPS.length); }
     };
     window.addEventListener('keydown', key, true);
     return () => window.removeEventListener('keydown', key, true);
   }, [done]);
 
-  const restart = () => { setNoticeIn(false); setGone(false); cur.current = null; setAt(0); };
+  const restart = () => { setNoticeIn(false); setGone(false); cur.current = null; dir.current = 1; setAt(0); };
   if (gone) return design ? <Replay onClick={restart} /> : null;
   const last = at === STOPS.length - 1;
 
@@ -162,10 +183,10 @@ export function TourOverlay({ onFinished, design = true }: { onFinished?: () => 
           <p className="mt-1 text-[13px] leading-[19px] text-muted-foreground">{stop.line}</p>
           <div className="mt-4 flex h-8 items-center gap-1">
             <span className="flex-1 whitespace-nowrap text-[12px] tabular-nums text-faint">{at + 1} of {STOPS.length}</span>
-            {at > 0 && !last && <button className="h-8 whitespace-nowrap rounded-md px-2.5 text-[13px] text-muted-foreground hover:text-foreground" onClick={() => setAt((n) => n - 1)}>Back</button>}
-            {!last && <button className="h-8 whitespace-nowrap rounded-md px-2.5 text-[13px] text-muted-foreground hover:text-foreground" onClick={() => setAt(STOPS.length)}>Skip</button>}
-            {last && <button className="h-8 whitespace-nowrap rounded-md px-2.5 text-[13px] text-muted-foreground hover:text-foreground" onClick={() => setAt(STOPS.length)}>Not Now</button>}
-            <button className="ml-1 h-8 whitespace-nowrap rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:opacity-90" onClick={() => { if (last) enableNotifications(); setAt((n) => n + 1); }}>
+            {at > 0 && !last && <button className="h-8 whitespace-nowrap rounded-md px-2.5 text-[13px] text-muted-foreground hover:text-foreground" onClick={() => go(at - 1)}>Back</button>}
+            {!last && <button className="h-8 whitespace-nowrap rounded-md px-2.5 text-[13px] text-muted-foreground hover:text-foreground" onClick={() => go(STOPS.length)}>Skip</button>}
+            {last && <button className="h-8 whitespace-nowrap rounded-md px-2.5 text-[13px] text-muted-foreground hover:text-foreground" onClick={() => go(STOPS.length)}>Not Now</button>}
+            <button className="ml-1 h-8 whitespace-nowrap rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:opacity-90" onClick={() => { if (last) enableNotifications(); go(at + 1); }}>
               {last ? 'Turn On Notifications' : 'Next'}
             </button>
           </div>

@@ -27,6 +27,7 @@ import { useCanopyAccount, useFirstRun } from '@/lib/canopy-account';
 import { FirstRun } from '@/components/canopy/first-run/first-run';
 import { api, type CanopyEvent, type Engine, type EnvInfo, type LiveSession, type OpenOpts, type SessionSummary } from '@/lib/api';
 import { choices } from '@/lib/choices';
+import { claudeBlock, codexReady } from '@/lib/engine-rules';
 import { reorderAs } from '@/lib/chat-order';
 import { applyChoices, expectedEngine, rememberEngines, startModels } from '@/lib/engines';
 import { startReleases } from '@/lib/releases';
@@ -359,7 +360,15 @@ export default function App() {
     // nothing to skip to. Otherwise the app opens and asks once, in a dialog you can dismiss (account-prompt.tsx);
     // history, Home, Settings and the other maker's chats all keep working. When Claude Code did not answer in time
     // (loggedIn null) the app opens too: a slow check must not lock a signed-in user out.
-    const problem: Problem | null = info?.error ? 'error' : !info.claudePath ? 'missing' : info.auth?.loggedIn === false && !info.everSignedIn ? 'login' : null;
+    // Someone who only uses ChatGPT is never stopped for Claude Code: with Codex signed in, the app opens and their
+    // new chats start on Codex (until they pick a Claude model themselves).
+    // That holds whenever Claude can't be used right now (not installed, or definitely signed out), even on a Mac where
+    // a Claude login once worked: a chat set up for a maker that can't answer is a dead end.
+    const claude = claudeBlock(info);
+    const claudeOut = !!claude || info.auth?.loggedIn === false;
+    const codexOnly = claudeOut && codexReady(info.accounts);
+    if (codexOnly && choices.engine === undefined) choices.engine = 'codex';
+    const problem: Problem | null = info?.error ? 'error' : codexOnly ? null : claude;
     if (problem) { await settle(); setView({ name: 'setup', problem, detail: info.error }); return problem; }
     refresh();
     const live = await api.attach();
@@ -387,6 +396,11 @@ export default function App() {
 
   // Back from Terminal (installed, or signed in): look again without being asked, at most every 2s.
   const onSetup = view.name === 'setup';
+  // A sign-in that lands while this screen is up (onboarding signs in over it, or Codex finishes checking after
+  // launch) changes the accounts list without the window losing focus: look again then, so a Codex user gets in and
+  // the first-run tour runs over the app, not over a setup screen that no longer applies.
+  const signedInSomewhere = !!accounts?.list?.some((a) => a.state === 'ok');
+  useEffect(() => { if (onSetup && signedInSomewhere) recheck(); }, [onSetup, signedInSomewhere]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!onSetup) return;
     const onFocus = () => { if (Date.now() - check.current.at >= 2000) recheck(); };
@@ -623,7 +637,7 @@ export default function App() {
       {/* over everything: this version may no longer be used (see update-required.tsx) */}
       <UpdateRequired />
       {/* the first run: once, over the app (see useFirstRun) */}
-      {firstRun && <FirstRun design={new URLSearchParams(location.search).has('mock')} onDone={firstRunDone} />}
+      {firstRun && <FirstRun design={new URLSearchParams(location.search).has('mock')} onDone={firstRunDone} appReady={view.name === 'main'} />}
     </TooltipProvider>
   );
 }

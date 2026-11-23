@@ -17,7 +17,8 @@
 //   &codex=ok|missing|signedout|silent    is Codex there (default ok). ok lists the OpenAI models recorded from a
 //                            real Codex (src/core/test/fixtures/codex-meta.jsonl); the others list none
 //   &method=apiKey|chatgpt   how Codex is signed in (default apiKey)
-//   &claude=none|signedout   none: Claude Code has not listed its models yet. signedout: nobody is signed in to it
+//   &claude=none|signedout|never|missing   none: Claude Code has not listed its models yet. signedout: nobody is signed in to it.
+//                            never: no Claude login ever worked on this Mac (a ChatGPT-only user); missing: no Claude Code at all
 //                            (Settings → Claude Code then has no account to list, and offers the sign-in)
 //   &held=the Codex app      (with chat=codex&started=1) another app has the chat on screen open: its row says so and
 //                            is faded beside an ordinary one, and one line stands in place of the message box. The row
@@ -25,6 +26,7 @@
 //   &stats=new|on|off|empty|blocked   usage stats (Settings > Privacy): new shows the first-launch notice, off starts
 //                            with the switch off, empty has nothing in "See what's sent", blocked is a copy that can't
 //                            send (the notice is owed and must not show). Left out: this main has no usage stats
+//   &reply=…                (with started=1) the reply's Markdown, to look at how a reply renders
 //   &switched=1              (with started=1) the chat switched maker after its first turn and went on there
 //   &settings=models         open Settings at that section once the window is up
 //   &memory=5                Canopy Memory holds that many notes (Settings > You > Memory lists them; &settings=memory
@@ -33,6 +35,7 @@
 //                            out: this main has none. &bridge=1: sharing Claude Code's and Codex's own memory was
 //                            turned on (it starts off)
 //   &cu=on|off|missing       Computer Use as Settings → Codex shows it (default on)
+//   &chromeSetup=ok|failed   Show the built-in Chrome row and simulate opening Chrome Settings.
 //   &up=current|updated|behind|updating|failed|manual    what Canopy's upkeep says about Codex's version on that
 //                            page (default current); &drift=1 adds two rows to its "Not shown yet" list
 //                            (The page's accounts follow &codex and &method: Codex's own login, or none.)
@@ -188,7 +191,7 @@ function bridge(data) {
   }));
   const history = started ? [
     { kind: 'user-text', text: 'Rename the helper and update its two callers.', at: Date.now() - 60000, history: true },
-    { kind: 'assistant-text', text: 'Done. The helper is now `readRows`, and both callers use the new name.', at: Date.now() - 50000, history: true },
+    { kind: 'assistant-text', text: q.get('reply') ?? 'Done. The helper is now `readRows`, and both callers use the new name.', at: Date.now() - 50000, history: true },
   ] : [];
   if (started && q.has('turns')) {
     const count = Math.max(1, Math.min(200, Number(q.get('turns')) || 1));
@@ -265,7 +268,8 @@ function bridge(data) {
   };
 
   // Nobody signed in to Claude Code now, though a login worked here once: the window opens, as it does in the app.
-  const signedOut = q.get('claude') === 'signedout';
+  const neverClaude = ['never', 'missing'].includes(q.get('claude'));
+  const signedOut = q.get('claude') === 'signedout' || neverClaude;
   // &queue=N: messages waiting behind a working chat's turn, in the order they go out.
   const queued = Array.from({ length: Number(q.get('queue')) || 0 }, (_, i) => ({ id: i + 1, text: ['also check the restart card', 'then fix the model chip', 'and write the tests', 'ship it'][i % 4], images: [] }));
   let queueV = 1;
@@ -298,7 +302,8 @@ function bridge(data) {
   const known = {
     dev: q.get('dev') !== '0', // the Playground and ?mock= exist only in a run from source
     widgetShot: async (sessionId, ref) => { calls.push({ name: 'widgetShot', args: [sessionId, ref] }); await new Promise((r) => setTimeout(r, 500)); return ref === 'look-demo' ? demoShot() : null; },
-    init: async () => ({ claudePath: '/usr/local/bin/claude', version: '2.5.0 (Claude Code)', auth: { loggedIn: !signedOut, method: signedOut ? null : 'claude.ai', org: null }, everSignedIn: true, lastFolder: cwd, userName: 'Sam', chatsDir: '/tmp/harness-chats', home: '/tmp',
+    init: async () => ({ claudePath: q.get('claude') === 'missing' ? null : '/usr/local/bin/claude', version: '2.5.0 (Claude Code)', auth: { loggedIn: !signedOut, method: signedOut ? null : 'claude.ai', org: null }, everSignedIn: !neverClaude, accounts: accountsNow, // as main sends them with app:init
+      lastFolder: cwd, userName: 'Sam', chatsDir: '/tmp/harness-chats', home: '/tmp',
       appVersion: '0.0.1', claudeDir: '/Users/sam/.claude', codexDir: '/Users/sam/.codex', codexPath: codexState === 'missing' ? null : '/opt/homebrew/bin/codex', codexVersion: groups.codex.version }),
     recheck: async () => known.init(),
     attach: async () => q.has('playground') || queued.length ? { sid, cwd, engine, sessionId, busy: queued.length > 0, settings: {}, history: [], pending: [], queue: queued, queueV: 1 } : null,
@@ -464,6 +469,7 @@ function bridge(data) {
       const full = name ? `${name}.${key}` : key;
       if (!(key in t)) {
         if (!name && key === 'computerUse') return (stand[key] ??= stand(key, computerUse));
+        if (!name && key === 'backgroundChrome' && q.has('chromeSetup')) return (stand[key] ??= stand(key, { openSettings: async () => q.get('chromeSetup') !== 'failed' }));
         if (!name && ['pane', 'term', 'customize'].includes(key)) return (stand[key] ??= stand(key, key === 'pane' ? pane : {})); // one stand-in each, kept: `window.canopy.pane.earlier = async () => …` replaces a call
         t[key] = key.startsWith('on') ? on(full) : async () => null;
       }

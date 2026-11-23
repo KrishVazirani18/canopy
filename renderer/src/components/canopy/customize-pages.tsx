@@ -65,6 +65,7 @@ export function ConnectorsPage({ close }: { close: () => void }) {
   if (current) return <ConnectorPage s={current} tools={toolsOf(current)} dir={nav.dir} back={nav.back} signIn={() => signIn(current)} onRemoved={() => { nav.back(); refresh('mcp', true); }} />;
 
   const shown = servers.filter((s) => has(q, s.label, s.target));
+  const showChrome = typeof api.backgroundChrome?.openSettings === 'function' && has(q, 'Chrome', 'browser');
   // Under the connectors waiting for a sign-in, when the account in use is one added in Canopy: its sign-ins start empty.
   const groups: { title: string; items: McpServer[]; footer?: string }[] = [
     { title: 'Needs you', items: shown.filter((s) => s.status === 'needs-auth' || s.status === 'failed' || s.status === 'pending'),
@@ -82,9 +83,17 @@ export function ConnectorsPage({ close }: { close: () => void }) {
     <Page title="Connectors" dir={nav.dir}
       actions={<><Refresh busy={loading && !!data} onClick={reload} /><Button onClick={() => nav.go('__add')}><PlusIcon className="size-3.5" />Add Connector</Button></>}
       toolbar={<SearchField value={q} onChange={setQ} placeholder="Search connectors" />}>
+      {showChrome && <Section title="Built in" footer="Enable remote debugging in Chrome Settings. When a chat connects, Chrome asks you to approve access.">
+        <Row label="Chrome" detail="Use open tabs in the background with Claude Code or Codex" opens="outside" action="Chrome Settings"
+          onClick={() => {
+            void api.backgroundChrome?.openSettings().then((ok) => {
+              if (!ok) toast.error('Couldn’t open Chrome Settings. Open Google Chrome and go to chrome://inspect/#remote-debugging.');
+            }, () => toast.error('Couldn’t open Chrome Settings.'));
+          }} />
+      </Section>}
       {error ? <Problem onRetry={reload}>{error}</Problem>
         : !data ? <Loading />
-        : groups.length === 0 ? <Empty>{q ? `No connectors match “${q.trim()}”.` : 'No connectors yet. Add one to give Canopy a new app.'}</Empty>
+        : groups.length === 0 && !showChrome ? <Empty>{q ? `No connectors match “${q.trim()}”.` : 'No connectors yet. Add one to give Canopy a new app.'}</Empty>
         : groups.map((g) => (
           <Section key={g.title} title={g.title} count={g.items.length} footer={g.footer}>
             {g.items.map((s) => (
